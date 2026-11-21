@@ -25,6 +25,7 @@ import {
   deleteLearnedPattern,
   synthesizeMemoryFromSignals,
 } from './src/server/memory.ts';
+import { runFullWebsiteBrandScan } from './src/server/brandScanner.ts';
 
 // Custom Vite plugin to handle /api/* server endpoints directly in dev
 function apiServerPlugin(): Plugin {
@@ -254,6 +255,26 @@ function apiServerPlugin(): Plugin {
           res.setHeader('Content-Type', resolved.mimeType);
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
           fs.createReadStream(resolved.fullPath).pipe(res);
+          return;
+        }
+
+        // Full Website Brand DNA & Screenshot Scanner (POST /api/brand-scan)
+        if (req.url?.startsWith('/api/brand-scan') && req.method === 'POST') {
+          let bodyStr = '';
+          req.on('data', (chunk) => (bodyStr += chunk));
+          req.on('end', async () => {
+            try {
+              const body = JSON.parse(bodyStr || '{}');
+              const scan = await runFullWebsiteBrandScan(body.url || '');
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify(scan));
+            } catch (err: any) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 500;
+              res.end(JSON.stringify({ ok: false, error: err.message || 'Brand scan failed' }));
+            }
+          });
           return;
         }
 

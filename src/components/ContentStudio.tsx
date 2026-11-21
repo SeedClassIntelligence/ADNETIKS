@@ -92,6 +92,7 @@ import { InfoTip } from './GuidedTourOverlay';
 
 interface ContentStudioProps {
   brandProfile: BrandProfile;
+  setBrandProfile?: (profile: BrandProfile) => void;
   avatars: CustomerAvatar[];
   setAvatars?: (avatars: CustomerAvatar[]) => void;
   selectedAvatar: CustomerAvatar;
@@ -117,6 +118,7 @@ interface ContentStudioProps {
 
 export default function ContentStudio({
   brandProfile,
+  setBrandProfile,
   avatars,
   setAvatars,
   selectedAvatar,
@@ -409,6 +411,39 @@ export default function ContentStudio({
   const [videoRenderProgress, setVideoRenderProgress] = useState(0);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
 
+  // Real Website Brand DNA & Screenshot Scanner State
+  const [isScanningBrand, setIsScanningBrand] = useState(false);
+  const [activeBrandAccent, setActiveBrandAccent] = useState<string>(
+    brandProfile.brandColors?.primary || '#E8192C'
+  );
+  const [activeBrandSecondary, setActiveBrandSecondary] = useState<string>(
+    brandProfile.brandColors?.secondary || '#06B6D4'
+  );
+  const [brandScanResult, setBrandScanResult] = useState<{
+    url: string;
+    domain: string;
+    brandName: string;
+    tagline: string;
+    siteType: string;
+    desktopScreenshotUrl?: string;
+    mobileScreenshotUrl?: string;
+    faviconUrl?: string;
+    palette: { primary: string; secondary: string; background: string; textOnPrimary: string; swatches: string[] };
+    fonts: string[];
+    visualVibe: string;
+    suggestedHook: string;
+    summaryText: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (brandProfile.brandColors?.primary) {
+      setActiveBrandAccent(brandProfile.brandColors.primary);
+    }
+    if (brandProfile.brandColors?.secondary) {
+      setActiveBrandSecondary(brandProfile.brandColors.secondary);
+    }
+  }, [brandProfile.brandColors?.primary, brandProfile.brandColors?.secondary]);
+
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -586,8 +621,10 @@ export default function ContentStudio({
         voiceTone: aiVideoVoiceTone,
         musicStyle: aiVideoMusicStyle,
         beats: videoBeats,
-        backgroundImageUrl: currentActiveVariant.mediaUrl,
+        backgroundImageUrl: brandScanResult?.mobileScreenshotUrl || currentActiveVariant.mediaUrl,
         waveform: videoWaveform,
+        brandPrimaryColor: activeBrandAccent,
+        brandSecondaryColor: activeBrandSecondary,
         onProgress: (pct) => setVideoRenderProgress(pct),
       });
       const safeName = `${aiVideoTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 32) || 'adnetiks_reel'}.webm`;
@@ -622,6 +659,97 @@ export default function ContentStudio({
       showNotificationToast('Video Render Error', 'Could not compose video on this browser.');
     } finally {
       setIsRenderingVideo(false);
+    }
+  };
+
+  // Full Website Brand DNA & Screenshot Scanner (POST /api/brand-scan)
+  const handleFullBrandScan = async (overrideUrl?: string, autoSynthesize = false) => {
+    const urlToScan = (overrideUrl || sourceInput || '').trim();
+    if (!urlToScan.startsWith('http')) {
+      showNotificationToast('Valid URL Needed', 'Enter a full public https:// URL to capture screenshots & extract Brand DNA.');
+      return null;
+    }
+    setIsScanningBrand(true);
+    try {
+      const res = await fetch('/api/brand-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: urlToScan }),
+      });
+      const data = await res.json();
+      if (!data?.ok) {
+        showNotificationToast('Brand Scan Notice', data?.error || 'Could not scan that website.');
+        return null;
+      }
+
+      setBrandScanResult(data);
+      setScrapedPageMeta({
+        title: data.brandName || data.domain,
+        domain: data.domain,
+        description: data.tagline || data.description,
+        ogImage: data.desktopScreenshotUrl || data.ogImageUrl,
+        siteType: data.siteType || 'web',
+      });
+
+      // Apply extracted brand colors, fonts & destination URL live!
+      if (data.palette?.primary) setActiveBrandAccent(data.palette.primary);
+      if (data.palette?.secondary) setActiveBrandSecondary(data.palette.secondary);
+      setAdDestinationUrl(data.url);
+      if (data.suggestedHook) setAdHeadline(data.suggestedHook.slice(0, 72));
+
+      // Apply real captured Desktop Website Screenshot across active campaign variants + Media Gallery
+      if (data.desktopScreenshotUrl) {
+        setUploadedScreenshot(data.desktopScreenshotUrl);
+        applyImageToVariants(data.desktopScreenshotUrl);
+        const newAssets: GeneratedVisualAsset[] = [
+          {
+            id: `scan-desk-${Date.now()}`,
+            prompt: `Live Desktop Screenshot (1440×900) of ${data.domain}`,
+            aspectRatio: '16:9',
+            imageUrl: data.desktopScreenshotUrl,
+            createdAt: 'Brand Scan',
+            targetAvatarName: selectedAvatar.name,
+          },
+        ];
+        if (data.mobileScreenshotUrl && data.mobileScreenshotUrl !== data.desktopScreenshotUrl) {
+          newAssets.push({
+            id: `scan-mob-${Date.now() + 1}`,
+            prompt: `Live Mobile Screenshot (430×932) of ${data.domain}`,
+            aspectRatio: '9:16',
+            imageUrl: data.mobileScreenshotUrl,
+            createdAt: 'Brand Scan',
+            targetAvatarName: selectedAvatar.name,
+          });
+        }
+        setRecentAssets((prev) => [...newAssets, ...prev]);
+      }
+
+      // Update global Brand Brain with scanned colors, fonts & logo
+      if (setBrandProfile) {
+        setBrandProfile({
+          ...brandProfile,
+          brandColors: data.palette,
+          brandFonts: data.fonts,
+          logoUrl: data.faviconUrl || brandProfile.logoUrl,
+          websiteUrl: data.url,
+        });
+      }
+
+      showNotificationToast(
+        'Website Brand DNA & Screenshots Captured',
+        `Captured desktop/mobile screenshots, ${data.palette.swatches.length} hex colors (${data.palette.primary}), and fonts from ${data.domain}.`
+      );
+
+      if (autoSynthesize) {
+        await handleRunFullCampaignSynthesis(data.url);
+      }
+      return data;
+    } catch (err) {
+      console.warn('Brand scan error:', err);
+      showNotificationToast('Brand Scan Error', 'Could not complete full website scan.');
+      return null;
+    } finally {
+      setIsScanningBrand(false);
     }
   };
 
@@ -2273,7 +2401,7 @@ export default function ContentStudio({
               </label>
               {sourceType === 'url' ? (
                 <div className="space-y-2">
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                     <input
                       type="url"
                       value={sourceInput}
@@ -2281,7 +2409,7 @@ export default function ContentStudio({
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          handleScrapeLiveUrl().then(() => handleRunFullCampaignSynthesis());
+                          handleFullBrandScan(undefined, true);
                         }
                       }}
                       placeholder="https://example.com/product-launch"
@@ -2289,17 +2417,135 @@ export default function ContentStudio({
                     />
                     <button
                       type="button"
+                      disabled={isScanningBrand}
+                      onClick={() => handleFullBrandScan(undefined, false)}
+                      className="px-3 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold whitespace-nowrap flex items-center gap-1.5 shrink-0 shadow-md transition-all"
+                      title="Opens website in headless Chrome, captures Desktop & Mobile screenshots, extracts exact hex brand colors & fonts, and themes your ads"
+                    >
+                      <Camera className={`w-3.5 h-3.5 ${isScanningBrand ? 'animate-spin' : ''}`} />
+                      <span>{isScanningBrand ? 'Scanning...' : 'Brand Scan'}</span>
+                    </button>
+                    <button
+                      type="button"
                       disabled={isScrapingUrl}
                       onClick={() => handleScrapeLiveUrl()}
-                      className="px-3 py-2 rounded-xl bg-blue-950/70 hover:bg-blue-900/80 border border-blue-700/60 text-blue-200 text-xs font-bold whitespace-nowrap flex items-center gap-1.5 shrink-0 transition-all"
-                      title="Fetch live page title, copy, headings & artwork"
+                      className="px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold whitespace-nowrap flex items-center gap-1 shrink-0 transition-all"
+                      title="Quick HTML text metadata fetch"
                     >
                       <Globe className={`w-3.5 h-3.5 ${isScrapingUrl ? 'animate-spin' : ''}`} />
-                      <span>{isScrapingUrl ? 'Fetching...' : 'Fetch Live'}</span>
+                      <span className="hidden sm:inline">Quick</span>
                     </button>
                   </div>
 
-                  {scrapedPageMeta && (
+                  {/* CAPTURED WEBSITE BRAND DNA CARD (SCREENSHOTS + REAL HEX COLORS + FONTS) */}
+                  {brandScanResult && (
+                    <div className="p-3 rounded-xl bg-[#0D0D11] border border-cyan-600/50 space-y-3 shadow-lg">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span className="text-xs font-extrabold text-white truncate">
+                            Brand DNA Captured: {brandScanResult.brandName}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950/60 border border-cyan-800/60 px-2 py-0.5 rounded shrink-0">
+                          {brandScanResult.domain}
+                        </span>
+                      </div>
+
+                      {/* Captured Desktop & Mobile Website Screenshots */}
+                      <div className="grid grid-cols-2 gap-2">
+                        {brandScanResult.desktopScreenshotUrl && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUploadedScreenshot(brandScanResult.desktopScreenshotUrl!);
+                              applyImageToVariants(brandScanResult.desktopScreenshotUrl!);
+                              showNotificationToast('Desktop Screenshot Applied', 'Applied live 1440×900 capture to ad variants.');
+                            }}
+                            className="group relative rounded-lg overflow-hidden border border-slate-700 hover:border-cyan-400 aspect-video bg-black text-left"
+                          >
+                            <img
+                              src={brandScanResult.desktopScreenshotUrl}
+                              alt="Desktop website capture"
+                              className="w-full h-full object-cover object-top"
+                            />
+                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-mono text-white">
+                              🖥 Desktop Capture
+                            </span>
+                          </button>
+                        )}
+                        {brandScanResult.mobileScreenshotUrl && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUploadedScreenshot(brandScanResult.mobileScreenshotUrl!);
+                              applyImageToVariants(brandScanResult.mobileScreenshotUrl!);
+                              showNotificationToast('Mobile Screenshot Applied', 'Applied live 430×932 capture to ad/video variants.');
+                            }}
+                            className="group relative rounded-lg overflow-hidden border border-slate-700 hover:border-cyan-400 aspect-video bg-black text-left"
+                          >
+                            <img
+                              src={brandScanResult.mobileScreenshotUrl}
+                              alt="Mobile website capture"
+                              className="w-full h-full object-cover object-top"
+                            />
+                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-mono text-white">
+                              📱 Mobile Capture
+                            </span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Extracted Brand Color Palette Swatches (Click to Re-Theme Ads & Videos) */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                          <span>Extracted Brand Palette (Click swatch to theme ads &amp; video):</span>
+                          <span style={{ color: activeBrandAccent }} className="font-bold">
+                            Active: {activeBrandAccent}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {brandScanResult.palette.swatches.map((hex) => (
+                            <button
+                              key={hex}
+                              type="button"
+                              onClick={() => {
+                                setActiveBrandAccent(hex);
+                                showNotificationToast('Ad Theme Updated', `Applied brand color ${hex} to Sponsored Ad CTA, Carousel & 9:16 Video.`);
+                              }}
+                              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-mono transition-all ${
+                                activeBrandAccent === hex
+                                  ? 'bg-slate-800 border-white text-white shadow-sm'
+                                  : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-600'
+                              }`}
+                            >
+                              <span
+                                className="w-3 h-3 rounded-full border border-white/25"
+                                style={{ backgroundColor: hex }}
+                              />
+                              <span>{hex}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Detected Fonts & Visual Vibe */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/80 text-[10px]">
+                        <span className="text-slate-400">
+                          Fonts: <strong className="text-white">{brandScanResult.fonts.join(', ')}</strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRunFullCampaignSynthesis(brandScanResult.url)}
+                          className="text-cyan-400 hover:text-cyan-300 font-bold"
+                        >
+                          ⚡ Build Full On-Brand Campaign →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {scrapedPageMeta && !brandScanResult && (
                     <div className="p-2.5 rounded-xl bg-emerald-950/25 border border-emerald-700/50 flex items-start gap-2.5">
                       {scrapedPageMeta.ogImage && (
                         <img
@@ -3036,8 +3282,12 @@ export default function ContentStudio({
                     <button
                       type="button"
                       onClick={handleTestPixelFire}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-500 active:scale-95 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 shadow-md shadow-red-900/30 transition-all shrink-0"
-                      title="Clicking CTA automatically registers a conversion pixel event"
+                      style={{
+                        backgroundColor: activeBrandAccent,
+                        color: brandScanResult?.palette?.textOnPrimary || '#FFFFFF',
+                      }}
+                      className="px-4 py-2 hover:brightness-110 active:scale-95 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 shadow-md transition-all shrink-0"
+                      title="Styled with active Brand DNA primary color — clicking registers a live conversion pixel event"
                     >
                       <span>{adCtaText}</span>
                       <ExternalLink className="w-3.5 h-3.5" />
@@ -3310,10 +3560,10 @@ export default function ContentStudio({
                               } transition-all duration-700`}
                             />
                             <img
-                              src={currentActiveVariant.mediaUrl || '/src/assets/images/campaign_creative_asset_1793456644284.jpg'}
+                              src={brandScanResult?.mobileScreenshotUrl || currentActiveVariant.mediaUrl || '/src/assets/images/campaign_creative_asset_1793456644284.jpg'}
                               alt="AI Video scene background"
                               referrerPolicy="no-referrer"
-                              className={`absolute inset-0 w-full h-full object-cover opacity-45 transition-transform duration-1000 ${
+                              className={`absolute inset-0 w-full h-full object-cover object-top opacity-50 transition-transform duration-1000 ${
                                 isVideoPlaying ? 'scale-105' : 'scale-100'
                               }`}
                             />

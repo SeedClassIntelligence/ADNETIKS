@@ -530,6 +530,7 @@ export default function App() {
           {activeTab === 'studio' && (
             <ContentStudio
               brandProfile={brandProfile}
+              setBrandProfile={setBrandProfile}
               avatars={avatars}
               setAvatars={setAvatars}
               selectedAvatar={selectedAvatar}

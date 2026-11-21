@@ -32,6 +32,15 @@ export interface BrandProfile {
     energeticVsReserved: number;
     boldVsUnderstated: number;
   };
+  brandColors?: {
+    primary: string;
+    secondary: string;
+    background: string;
+    swatches: string[];
+  };
+  brandFonts?: string[];
+  logoUrl?: string;
+  websiteUrl?: string;
 }
 
 export interface CustomerAvatar {

@@ -119,6 +119,49 @@ export default function BrandSetupWizard({
   const [offerOrUrl, setOfferOrUrl] = useState('');
   const [targetRegion, setTargetRegion] = useState('US, UK & Global Tier-1 Cities');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [isScanningSite, setIsScanningSite] = useState(false);
+  const [scannedBrandData, setScannedBrandData] = useState<{
+    brandName: string;
+    desktopScreenshotUrl?: string;
+    mobileScreenshotUrl?: string;
+    faviconUrl?: string;
+    palette?: { primary: string; secondary: string; background: string; swatches: string[] };
+    fonts?: string[];
+    visualVibe?: string;
+    url?: string;
+  } | null>(null);
+
+  const handleAutoScanWebsite = async () => {
+    const raw = offerOrUrl.trim();
+    if (!raw.startsWith('http')) {
+      showNotificationToast('Enter a Website URL', 'Paste a public https:// website URL in step 3 to auto-scan screenshots, colors & fonts.');
+      return;
+    }
+    setIsScanningSite(true);
+    try {
+      const res = await fetch('/api/brand-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: raw }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        setScannedBrandData(data);
+        if (data.brandName && !brandName.trim()) setBrandName(data.brandName);
+        if (data.tagline && !tagline.trim()) setTagline(data.tagline);
+        showNotificationToast(
+          'Website Brand DNA Captured',
+          `Captured screenshots & ${data.palette?.swatches?.length || 5} brand colors (${data.palette?.primary}) from ${data.domain}.`
+        );
+      } else {
+        showNotificationToast('Scan Notice', data?.error || 'Could not scan that website.');
+      }
+    } catch {
+      showNotificationToast('Scan Error', 'Website brand scanner encountered a network error.');
+    } finally {
+      setIsScanningSite(false);
+    }
+  };
 
   const preset = CATEGORY_PRESETS[category];
 
@@ -137,6 +180,10 @@ export default function BrandSetupWizard({
         voiceAttributes: preset.voiceAttributes,
         valuePillars: preset.valuePillars,
         bannedWords: preset.bannedWords,
+        brandColors: scannedBrandData?.palette || brandProfile.brandColors,
+        brandFonts: scannedBrandData?.fonts || brandProfile.brandFonts,
+        logoUrl: scannedBrandData?.faviconUrl || brandProfile.logoUrl,
+        websiteUrl: scannedBrandData?.url || (cleanOffer.startsWith('http') ? cleanOffer : brandProfile.websiteUrl),
       };
 
       let discovered: CustomerAvatar[] = [];
@@ -266,11 +313,23 @@ export default function BrandSetupWizard({
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-          <Globe className="w-3.5 h-3.5 text-cyan-400" />
-          3. Paste your Website, Spotify, Social Link, or Describe Your Offer
-        </label>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <Globe className="w-3.5 h-3.5 text-cyan-400" />
+            3. Paste your Website, Spotify, Social Link, or Describe Your Offer
+          </label>
+          <button
+            type="button"
+            disabled={isScanningSite}
+            onClick={handleAutoScanWebsite}
+            className="px-3 py-1 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/70 border border-cyan-600/60 text-cyan-200 text-[11px] font-bold flex items-center gap-1.5 transition-all"
+            title="Opens the website in headless Chrome, captures desktop & mobile screenshots, and extracts exact hex colors & fonts"
+          >
+            <RefreshCw className={`w-3 h-3 ${isScanningSite ? 'animate-spin' : ''}`} />
+            <span>{isScanningSite ? 'Scanning Site & Colors...' : '📸 Auto-Scan Website DNA'}</span>
+          </button>
+        </div>
         <textarea
           rows={2}
           value={offerOrUrl}
@@ -278,6 +337,37 @@ export default function BrandSetupWizard({
           placeholder={preset.placeholderOffer}
           className="w-full bg-[#0A0A0C] border border-[#2A2A38] rounded-xl p-3 text-xs text-white placeholder-[#52526B] focus:outline-none focus:border-red-500"
         />
+
+        {scannedBrandData && (
+          <div className="p-3 rounded-xl bg-emerald-950/25 border border-emerald-700/50 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            {scannedBrandData.desktopScreenshotUrl && (
+              <img
+                src={scannedBrandData.desktopScreenshotUrl}
+                alt="Scanned website"
+                className="w-24 h-14 rounded-lg object-cover border border-emerald-800/60 shrink-0"
+              />
+            )}
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="text-xs font-bold text-white flex items-center gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Brand DNA Captured: {scannedBrandData.brandName}</span>
+              </div>
+              {scannedBrandData.palette && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {scannedBrandData.palette.swatches.map((hex) => (
+                    <span
+                      key={hex}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#0A0A0C] border border-[#2A2A38] text-[10px] font-mono text-slate-200"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full border border-white/20" style={{ backgroundColor: hex }} />
+                      {hex}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Preview of Preset Voice + Actions */}

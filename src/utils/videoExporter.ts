@@ -17,6 +17,8 @@ export interface RenderVideoOptions {
   beats: AIVideoBeat[];
   backgroundImageUrl?: string;
   waveform?: number[];
+  brandPrimaryColor?: string;
+  brandSecondaryColor?: string;
   onProgress?: (pct: number) => void;
 }
 
@@ -148,10 +150,12 @@ export async function renderAiVideoToBlob(opts: RenderVideoOptions): Promise<Blo
     if (ev.data && ev.data.size > 0) chunks.push(ev.data);
   };
 
+  const pAccent = opts.brandPrimaryColor || '#E8192C';
+  const sAccent = opts.brandSecondaryColor || '#06B6D4';
   const beatPalettes = [
-    { top: '#2A0810', mid: '#0A0A0C', bottom: '#160912', accent: '#E8192C' },
-    { top: '#06202C', mid: '#0A0A0C', bottom: '#081826', accent: '#06B6D4' },
-    { top: '#1E0B2E', mid: '#0A0A0C', bottom: '#140822', accent: '#A855F7' },
+    { top: '#1A0B12', mid: '#0A0A0C', bottom: '#120A10', accent: pAccent },
+    { top: '#0A1620', mid: '#0A0A0C', bottom: '#0A121C', accent: sAccent },
+    { top: '#180B24', mid: '#0A0A0C', bottom: '#120A1A', accent: pAccent },
   ];
 
   const recordingPromise = new Promise<Blob>((resolve, reject) => {
