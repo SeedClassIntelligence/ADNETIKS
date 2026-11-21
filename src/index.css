@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ─────────────────────────────────────────
+   ADNETIKS Design System — Custom Theme
+   ───────────────────────────────────────── */
+@theme {
+  --font-display: 'Plus Jakarta Sans', sans-serif;
+  --font-sans: 'Public Sans', sans-serif;
+
+  /* ADNETIKS Color Palette */
+  --color-adn-black: #0A0A0C;
+  --color-adn-surface: #111116;
+  --color-adn-surface-2: #18181F;
+  --color-adn-border: #1F1F2A;
+  --color-adn-border-bright: #2A2A38;
+  --color-adn-muted: #52526B;
+  --color-adn-secondary: #8B8BA8;
+  --color-adn-primary: #E5E5F0;
+  --color-adn-red: #E8192C;
+  --color-adn-red-dim: #8A0C10;
+  --color-adn-red-glow: rgba(232, 25, 44, 0.15);
+  --color-adn-accent: #FF6B6B;
+}
+
+/* ─────────────────────────────────────────
+   Base Styles
+   ───────────────────────────────────────── */
+:root {
+  font-family: 'Public Sans', system-ui, -apple-system, sans-serif;
+  background: #0A0A0C;
+  color: #E5E5F0;
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+/* ─────────────────────────────────────────
+   Custom Scrollbar
+   ───────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1F1F2A;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2A2A38;
+}
+
+/* ─────────────────────────────────────────
+   Typography — Editorial Classes
+   ───────────────────────────────────────── */
+
+/* Large editorial numbers / stats */
+.stat-num {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* Platform label caps */
+.label-caps {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ─────────────────────────────────────────
+   Texture & Depth Effects
+   ───────────────────────────────────────── */
+
+/* Noise texture overlay for depth */
+.noise-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Subtle red glow behind active elements */
+.glow-red {
+  box-shadow: 0 0 24px rgba(232, 25, 44, 0.12), 0 0 48px rgba(232, 25, 44, 0.06);
+}
+
+/* Hard editorial dividers */
+.rule-h {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #1F1F2A 20%, #1F1F2A 80%, transparent);
+}
+
+/* ─────────────────────────────────────────
+   Card Design Language
+   ───────────────────────────────────────── */
+
+.card-adn {
+  background: #111116;
+  border: 1px solid #1F1F2A;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.card-adn:hover {
+  border-color: #2A2A38;
+}
+
+.card-adn-elevated {
+  background: #18181F;
+  border: 1px solid #2A2A38;
+  border-radius: 12px;
+}
+
+/* Red accent top-border on key cards */
+.card-adn-featured {
+  position: relative;
+  overflow: hidden;
+}
+
+.card-adn-featured::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #E8192C, #FF6B6B, transparent);
+  z-index: 1;
+}
+
+/* ─────────────────────────────────────────
+   Sidebar Transition
+   ───────────────────────────────────────── */
+
+.sidebar-adn {
+  width: 56px;
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.sidebar-adn:hover,
+.sidebar-adn.expanded {
+  width: 200px;
+}
+
+.sidebar-label {
+  opacity: 0;
+  width: 0;
+  white-space: nowrap;
+  transition: opacity 0.15s ease, width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.sidebar-adn:hover .sidebar-label,
+.sidebar-adn.expanded .sidebar-label {
+  opacity: 1;
+  width: auto;
+}

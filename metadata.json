@@ -1,0 +1,6 @@
+{
+  "name": "ADNETIKS — Social Content & Automated Delivery Platform",
+  "description": "AI-driven social media content creation, brand voice & customer avatar intelligence, A/B split testing, multi-channel automated scheduling, and performance analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
