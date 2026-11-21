@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Users,
   Compass,
+  Zap,
 } from 'lucide-react';
 
 interface TopNavProps {
@@ -32,6 +33,7 @@ interface TopNavProps {
   toggleTheme: () => void;
   onNewCampaignClick: () => void;
   onStartTour?: () => void;
+  onOpenOneClickLaunch?: () => void;
   brandName?: string;
   brandArchetype?: string;
   activeCampaignTitle?: string;
@@ -48,6 +50,7 @@ export default function TopNav({
   toggleTheme,
   onNewCampaignClick,
   onStartTour,
+  onOpenOneClickLaunch,
   brandName = 'ADNETIKS',
   brandArchetype = 'The Catalyst',
   activeCampaignTitle,
@@ -99,8 +102,19 @@ export default function TopNav({
           </div>
         </div>
 
-        {/* Right: Guided Tour + Active Brand Pill + Role + Utilities + New Campaign CTA */}
+        {/* Right: 1-Click Launch + Guided Tour + Active Brand Pill + Role + Utilities + New Campaign CTA */}
         <div className="flex items-center gap-2 shrink-0">
+          {onOpenOneClickLaunch && (
+            <button
+              onClick={onOpenOneClickLaunch}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-950/70 to-cyan-950/70 hover:from-emerald-900/80 hover:to-cyan-900/80 border border-emerald-700/60 text-emerald-300 hover:text-white text-xs font-bold transition-all cursor-pointer"
+              title="Paste any website URL to auto-build your brand, customers & first campaign in 1 click"
+            >
+              <Zap className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden md:inline">1-Click Launch</span>
+            </button>
+          )}
+
           {onStartTour && (
             <button
               onClick={onStartTour}

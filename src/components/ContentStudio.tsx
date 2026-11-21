@@ -88,6 +88,7 @@ import {
 import AdnetiksLogo from './AdnetiksLogo';
 import { renderAiVideoToBlob, uploadMediaBlob } from '../utils/videoExporter';
 import { CAMPAIGN_TEMPLATES, CampaignTemplate, TemplateCategory } from '../data/campaignTemplates';
+import { OneClickOnboardResultPayload } from './OneClickOnboardModal';
 import { InfoTip } from './GuidedTourOverlay';
 
 interface ContentStudioProps {
@@ -114,6 +115,8 @@ interface ContentStudioProps {
   onUpdateCampaignTitle?: (id: string, title: string) => void;
   preloadedTemplate?: CampaignTemplate | null;
   onClearPreloadedTemplate?: () => void;
+  preloadedOnboard?: OneClickOnboardResultPayload | null;
+  onClearPreloadedOnboard?: () => void;
 }
 
 export default function ContentStudio({
@@ -140,6 +143,8 @@ export default function ContentStudio({
   onUpdateCampaignTitle,
   preloadedTemplate,
   onClearPreloadedTemplate,
+  preloadedOnboard,
+  onClearPreloadedOnboard,
 }: ContentStudioProps) {
   // Active Campaign Project & Focused Left-Column Stepper
   const activeCampaignObj = campaigns.find((c) => c.id === activeCampaignId) || campaigns[0];
@@ -153,6 +158,52 @@ export default function ContentStudio({
       setCampaignTitle(activeCampaignObj.title);
     }
   }, [activeCampaignObj?.id, activeCampaignObj?.title]);
+
+  // Hydrate Studio immediately when arriving from 1-Click Website Onboarding
+  useEffect(() => {
+    if (!preloadedOnboard) return;
+    const { scan, campaign, generatedPosts, brandProfile: bp } = preloadedOnboard;
+    if (campaign?.title) setCampaignTitle(campaign.title);
+    if (campaign?.goal) setCampaignGoal(campaign.goal);
+    if (scan?.url) {
+      setSourceType('url');
+      setSourceInput(scan.url);
+      setAdDestinationUrl(scan.url);
+    }
+    if (scan?.suggestedHook || bp?.tagline) {
+      setAdHeadline((scan?.suggestedHook || bp?.tagline || '').slice(0, 72));
+    }
+    if (scan?.palette?.primary) setActiveBrandAccent(scan.palette.primary);
+    if (scan?.palette?.secondary) setActiveBrandSecondary(scan.palette.secondary);
+    if (scan) {
+      setBrandScanResult(scan);
+      if (scan.desktopScreenshotUrl) {
+        setUploadedScreenshot(scan.desktopScreenshotUrl);
+        setScreenshotFileName(`${scan.domain || 'website'}_capture.png`);
+      }
+    }
+    if (Array.isArray(generatedPosts) && generatedPosts.length > 0) {
+      setGeneratedVariants((prev) => {
+        const next = { ...prev };
+        generatedPosts.forEach((p) => {
+          const plat = p.platform as SocialPlatform;
+          if (!next[plat]) return;
+          const slot = p.variantLabel === 'Variant B' ? 'variantB' : 'variantA';
+          next[plat] = {
+            ...next[plat],
+            [slot]: {
+              hookAngle: p.hookAngle,
+              content: p.content,
+              hashtags: p.hashtags,
+              mediaUrl: p.mediaUrl || scan?.desktopScreenshotUrl,
+            },
+          };
+        });
+        return next;
+      });
+    }
+    if (onClearPreloadedOnboard) onClearPreloadedOnboard();
+  }, [preloadedOnboard]);
 
   const handleCampaignTitleChange = (val: string) => {
     setCampaignTitle(val);
@@ -4381,8 +4432,8 @@ export default function ContentStudio({
                         <AdnetiksLogo size={24} />
                       </div>
                       <div>
-                        <div className="text-xs font-bold text-white leading-tight">ADNETIKS Global</div>
-                        <div className="text-[11px] text-slate-400">Precision Brand Architecture & Autonomous Social</div>
+                        <div className="text-xs font-bold text-white leading-tight">{brandProfile.name}</div>
+                        <div className="text-[11px] text-slate-400 truncate max-w-xs">{brandProfile.tagline || `${brandProfile.archetype} · ${brandProfile.targetIndustry || 'Brand Studio'}`}</div>
                         <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
                           <span>Just now</span>
                           <span>·</span>

@@ -19,6 +19,7 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 import IntegrationsHub from './components/IntegrationsHub';
 import ResourcesPage from './components/ResourcesPage';
 import GuidedTourOverlay, { normalizeTourSection } from './components/GuidedTourOverlay';
+import OneClickOnboardModal, { OneClickOnboardResultPayload } from './components/OneClickOnboardModal';
 import StakeholderReportModal from './components/StakeholderReportModal';
 import NotificationDrawer from './components/NotificationDrawer';
 import AdnetiksLogo from './components/AdnetiksLogo';
@@ -118,6 +119,8 @@ export default function App() {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
   const [isTourOpen, setIsTourOpen] = useState(false);
+  const [isOneClickModalOpen, setIsOneClickModalOpen] = useState(false);
+  const [preloadedOnboard, setPreloadedOnboard] = useState<OneClickOnboardResultPayload | null>(null);
   const [preloadedTemplate, setPreloadedTemplate] = useState<CampaignTemplate | null>(null);
 
   // Active Campaign Project & Sub-Pillar Tabs
@@ -432,6 +435,34 @@ export default function App() {
     }
   };
 
+  // Apply 1-Click Website-to-Campaign Onboarding Result
+  const handleApplyOneClickOnboard = (
+    payload: OneClickOnboardResultPayload,
+    destination: 'studio' | 'brand_avatar' | 'scheduler'
+  ) => {
+    setBrandProfile(payload.brandProfile);
+    if (payload.avatars.length > 0) {
+      setAvatars(payload.avatars);
+      setSelectedAvatar(payload.avatars[0]);
+    }
+    setCampaigns((prev) => [payload.campaign, ...prev]);
+    setActiveCampaignId(payload.campaign.id);
+    setPreloadedOnboard(payload);
+    if (payload.generatedPosts.length > 0) {
+      setPosts((prev) => [...payload.generatedPosts, ...prev]);
+    }
+    if (destination === 'scheduler') {
+      setDistributionSubTab('queue');
+      setActiveTab('distribution');
+    } else {
+      setActiveTab(destination);
+    }
+    showNotificationToast(
+      `${payload.brandProfile.name} Launched`,
+      `Brand DNA (${payload.scannedPagesCount} page${payload.scannedPagesCount === 1 ? '' : 's'}), ${payload.avatars.length} customer persona(s), and ${payload.generatedPosts.length} ready posts are now live.`
+    );
+  };
+
   // Plug Video Asset from Video Studio directly into Campaign Builder
   const handlePlugVideoIntoCampaign = (video: CampaignVideoAsset) => {
     setAttachedCampaignVideo(video);
@@ -483,6 +514,7 @@ export default function App() {
           toggleTheme={toggleTheme}
           onNewCampaignClick={handleCreateCampaign}
           onStartTour={() => setIsTourOpen(true)}
+          onOpenOneClickLaunch={() => setIsOneClickModalOpen(true)}
           brandName={brandProfile.name}
           brandArchetype={brandProfile.archetype}
           activeCampaignTitle={activeCampaignTitle}
@@ -504,6 +536,7 @@ export default function App() {
               onSelectAvatar={(av) => setSelectedAvatar(av)}
               onOpenCampaign={handleOpenCampaign}
               onCreateCampaign={handleCreateCampaign}
+              onOpenOneClickLaunch={() => setIsOneClickModalOpen(true)}
               onCompleteBrandSetup={handleCompleteBrandSetup}
               showNotificationToast={showNotificationToast}
             />
@@ -556,6 +589,8 @@ export default function App() {
               onUpdateCampaignTitle={handleUpdateCampaignTitle}
               preloadedTemplate={preloadedTemplate}
               onClearPreloadedTemplate={() => setPreloadedTemplate(null)}
+              preloadedOnboard={preloadedOnboard}
+              onClearPreloadedOnboard={() => setPreloadedOnboard(null)}
             />
           )}
 
@@ -755,6 +790,14 @@ export default function App() {
           handleNavigateTab(sec);
           setIsTourOpen(true);
         }}
+      />
+
+      {/* 1-Click Website-to-Campaign Instant Onboarding Modal */}
+      <OneClickOnboardModal
+        isOpen={isOneClickModalOpen}
+        onClose={() => setIsOneClickModalOpen(false)}
+        onApplyOnboardResult={handleApplyOneClickOnboard}
+        showNotificationToast={showNotificationToast}
       />
 
       {/* Push Notification Toast Alert */}

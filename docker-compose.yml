@@ -1,0 +1,43 @@
+# ADNETIKS 1-Command Self-Hosted Stack
+#
+# Standard launch (uses your cloud AI key or zero-cost local heuristic mode):
+#   docker compose up -d
+#
+# 100% Offline / Free Local AI launch (bundles Ollama alongside ADNETIKS):
+#   docker compose --profile local-ai up -d
+
+services:
+  adnetiks:
+    build: .
+    container_name: adnetiks
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ADNETIKS_DEPLOY_MODE=self_hosted
+      - ADNETIKS_CHROME_PATH=/usr/bin/chromium
+      - ADNETIKS_LLM_PROVIDER=${ADNETIKS_LLM_PROVIDER:-gemini}
+      - ADNETIKS_LLM_MODEL=${ADNETIKS_LLM_MODEL:-}
+      - ADNETIKS_API_BASE_URL=${ADNETIKS_API_BASE_URL:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - adnetiks_data:/app/.adnetiks-data
+
+  # Optional 100% Free Local LLM Sidecar (start with: docker compose --profile local-ai up -d)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: adnetiks-ollama
+    profiles: ["local-ai"]
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+
+volumes:
+  adnetiks_data:
+  ollama_models:

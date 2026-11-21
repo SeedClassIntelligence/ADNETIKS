@@ -18,6 +18,7 @@ import {
   FolderKanban,
   Wand2,
   MapPin,
+  Zap,
 } from 'lucide-react';
 import {
   BrandProfile,
@@ -39,6 +40,7 @@ interface HomeDashboardProps {
   onSelectAvatar: (avatar: CustomerAvatar) => void;
   onOpenCampaign: (campaignId: string) => void;
   onCreateCampaign: () => void;
+  onOpenOneClickLaunch?: () => void;
   onCompleteBrandSetup: (
     updatedBrand: BrandProfile,
     discoveredAvatars: CustomerAvatar[],
@@ -58,6 +60,7 @@ export default function HomeDashboard({
   onSelectAvatar,
   onOpenCampaign,
   onCreateCampaign,
+  onOpenOneClickLaunch,
   onCompleteBrandSetup,
   showNotificationToast,
 }: HomeDashboardProps) {
@@ -121,7 +124,16 @@ export default function HomeDashboard({
               Follow the 4-stage loop: define your brand &amp; demographics, build a campaign, schedule delivery, and track real signals.
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {onOpenOneClickLaunch && (
+              <button
+                onClick={onOpenOneClickLaunch}
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-emerald-950/40 transition-all cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>1-Click URL Launch</span>
+              </button>
+            )}
             <button
               onClick={() => setShowWizard(!showWizard)}
               className="px-3 py-1.5 rounded-xl bg-[#111116] hover:bg-[#18181F] border border-[#2A2A38] text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition-all"

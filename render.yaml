@@ -1,0 +1,26 @@
+# Render.com 1-Click Cloud Deployment Blueprint for ADNETIKS
+# Connect this GitHub repo on https://dashboard.render.com/blueprints to launch in 1 click.
+
+services:
+  - type: web
+    name: adnetiks-platform
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    disk:
+      name: adnetiks-data
+      mountPath: /app/.adnetiks-data
+      sizeGB: 10
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ADNETIKS_DEPLOY_MODE
+        value: cloud_render
+      - key: ADNETIKS_LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false

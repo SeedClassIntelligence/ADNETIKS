@@ -150,11 +150,16 @@ function generateHeuristicContent(payload: GenerateContentPayload) {
   const avatarName = payload.customerAvatar.name;
   const painPoint = payload.customerAvatar.painPoints[0] || 'reaching and engaging your real audience';
   const brandName = payload.brandProfile.name;
-  const inputSnippet = payload.sourceInput.replace(/^https?:\/\//, '').slice(0, 60);
-  const inputLower = (payload.sourceInput + ' ' + (payload.campaignGoal || '')).toLowerCase();
+  const cleanedSource = payload.sourceInput
+    .replace(/^Full-Site Multi-Page Brand Dossier \([^)]+\):\s*/i, '')
+    .replace(/^https?:\/\//i, '')
+    .split('\n')[0]
+    .trim();
+  const inputSnippet = cleanedSource.slice(0, 80) || brandName;
+  const inputLower = `${cleanedSource} ${payload.campaignGoal || ''}`.toLowerCase();
 
-  const isMusic = inputLower.includes('music') || inputLower.includes('track') || inputLower.includes('song') || inputLower.includes('album') || inputLower.includes('tour') || inputLower.includes('concert') || inputLower.includes('spotify') || inputLower.includes('sound');
-  const isArt = inputLower.includes('art') || inputLower.includes('artist') || inputLower.includes('paint') || inputLower.includes('visual') || inputLower.includes('design') || inputLower.includes('drop') || inputLower.includes('merch');
+  const isMusic = /\b(music|track|song|album|tour|concert|spotify|vinyl|record label)\b/i.test(inputLower);
+  const isArt = /\b(artwork|artist|painting|gallery|sculpture|print drop|visual art)\b/i.test(inputLower);
 
   const variants = payload.platforms.map((platform) => {
     let varAContent = '';
