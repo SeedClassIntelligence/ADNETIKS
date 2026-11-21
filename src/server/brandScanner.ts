@@ -344,9 +344,11 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
   if (desktopOk) {
     try {
       const b64 = fs.readFileSync(desktopPath).toString('base64');
-      const vision = await analyzeImageVisual(`data:image/png;base64,${b64}`, desktopFilename, brandName);
-      if (vision.visualVibe) visualVibe = vision.visualVibe;
-      if (vision.suggestedHook) suggestedHook = vision.suggestedHook;
+      const vision = await analyzeImageVisual(`data:image/png;base64,${b64}`, brandName, brandName);
+      if (vision.provider !== 'local_metadata') {
+        if (vision.visualVibe) visualVibe = vision.visualVibe;
+        if (vision.suggestedHook) suggestedHook = vision.suggestedHook;
+      }
     } catch {
       // Keep extracted vibe
     }
