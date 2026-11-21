@@ -126,6 +126,54 @@ export default function App() {
 
   // In-App Toast System
   const [toast, setToast] = useState<{ id: string; title: string; message: string } | null>(null);
+  const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
+
+  // Hydrate persistent server-side workspace (.adnetiks-data/workspace.json) on boot
+  useEffect(() => {
+    fetch('/api/workspace')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const ws = data?.workspace;
+        if (ws) {
+          if (ws.brandProfile) setBrandProfile(ws.brandProfile);
+          if (Array.isArray(ws.avatars) && ws.avatars.length > 0) {
+            setAvatars(ws.avatars);
+            setSelectedAvatar(ws.avatars[0]);
+          }
+          if (Array.isArray(ws.campaigns) && ws.campaigns.length > 0) {
+            setCampaigns(ws.campaigns);
+            setActiveCampaignId(ws.campaigns[0].id);
+          }
+          if (Array.isArray(ws.posts) && ws.posts.length > 0) setPosts(ws.posts);
+          if (Array.isArray(ws.splitTests) && ws.splitTests.length > 0) setSplitTests(ws.splitTests);
+          if (ws.attachedCampaignVideo !== undefined) setAttachedCampaignVideo(ws.attachedCampaignVideo);
+          if (ws.brandConfigured) localStorage.setItem('adnetiks_brand_configured', 'true');
+        }
+      })
+      .catch(() => {})
+      .finally(() => setWorkspaceHydrated(true));
+  }, []);
+
+  // Debounced sync to persistent server-side workspace storage
+  useEffect(() => {
+    if (!workspaceHydrated) return;
+    const timer = setTimeout(() => {
+      fetch('/api/workspace', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brandProfile,
+          avatars,
+          campaigns,
+          posts,
+          splitTests,
+          attachedCampaignVideo,
+          brandConfigured: localStorage.getItem('adnetiks_brand_configured') === 'true',
+        }),
+      }).catch(() => {});
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [workspaceHydrated, brandProfile, avatars, campaigns, posts, splitTests, attachedCampaignVideo]);
 
   // Sync to LocalStorage
   useEffect(() => {

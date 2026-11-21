@@ -8,6 +8,22 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { generateText } from './llmProvider.ts';
+import { extractFirstUrl, scrapeUrlContext } from './ingest.ts';
+
+async function enrichSourceIfUrl(sourceInput: string, sourceType?: string) {
+  const url = extractFirstUrl(sourceInput || '');
+  if (!url || (sourceType && sourceType !== 'url' && !sourceInput.trim().startsWith('http'))) {
+    return { enrichedInput: sourceInput, scraped: null };
+  }
+  const scraped = await scrapeUrlContext(url);
+  if (scraped.ok && scraped.summaryText) {
+    return {
+      enrichedInput: `${sourceInput}\n\n--- LIVE SCRAPED WEBPAGE CONTEXT ---\n${scraped.summaryText}`,
+      scraped,
+    };
+  }
+  return { enrichedInput: sourceInput, scraped };
+}
 
 // Gemini client used exclusively for image generation
 const getGeminiClient = () => {
@@ -44,6 +60,7 @@ export interface GenerateContentPayload {
 }
 
 export async function handleGenerateContent(payload: GenerateContentPayload) {
+  const { enrichedInput, scraped } = await enrichSourceIfUrl(payload.sourceInput, payload.sourceType);
   const systemInstruction = `You are ADNETIKS AI, an elite brand strategist and multi-platform social media growth director.
 Brand Profile:
 - Brand Name: ${payload.brandProfile.name}
@@ -58,7 +75,7 @@ Target Customer Avatar:
 
 Task:
 Synthesize social campaign copy from the provided source input (${payload.sourceType}):
-"${payload.sourceInput.slice(0, 1500)}"
+"${enrichedInput.slice(0, 2200)}"
 Campaign Goal: ${payload.campaignGoal || 'High organic engagement and qualified inbound leads'}
 
 Generate a structured response for these platforms: ${payload.platforms.join(', ')}.
@@ -103,14 +120,20 @@ Return STRICTLY valid JSON conforming to this schema:
     const responseText = await generateText(userPrompt, systemInstruction);
     if (responseText) {
       const parsed = JSON.parse(responseText);
-      return parsed;
+      return { ...parsed, scraped };
     }
   } catch (error) {
     console.warn('LLM API call failed or encountered error, falling back to heuristic engine:', error);
   }
 
-  // Resilient High-Fidelity Heuristic Generation (Fallback)
-  return generateHeuristicContent(payload);
+  // Resilient High-Fidelity Heuristic Generation grounded in real scraped webpage title/description
+  const groundedPayload: GenerateContentPayload = scraped?.ok
+    ? {
+        ...payload,
+        sourceInput: `${scraped.title}${scraped.description ? ` — ${scraped.description}` : ''}`,
+      }
+    : payload;
+  return { ...generateHeuristicContent(groundedPayload), scraped };
 }
 
 function generateHeuristicContent(payload: GenerateContentPayload) {
@@ -286,10 +309,11 @@ export interface DiscoverAvatarsPayload {
 }
 
 export async function handleDiscoverAvatars(payload: DiscoverAvatarsPayload) {
+  const { enrichedInput } = await enrichSourceIfUrl(payload.sourceInput, payload.sourceType);
   const systemInstruction = `You are ADNETIKS AI, an elite brand strategist, customer avatar intelligence architect, and go-to-market director.
 Analyze the following ingested product, service, or campaign offer from ${payload.brandProfile.name}:
 - Source Type: ${payload.sourceType}
-- Source Details: "${payload.sourceInput.slice(0, 2000)}"
+- Source Details: "${enrichedInput.slice(0, 2400)}"
 - Campaign Goal: ${payload.campaignGoal || 'Drive high-conversion organic demand and qualified buyers'}
 
 Task:
@@ -642,7 +666,8 @@ export interface GenerateAiVideoPayload {
 export async function handleGenerateAiVideo(payload: GenerateAiVideoPayload) {
   const brandName = payload.brandProfile.name || 'ADNETIKS';
   const avatarName = payload.customerAvatar?.name || 'Ideal Target Prospect';
-  const inputSnippet = (payload.sourceInput || '').trim();
+  const { enrichedInput } = await enrichSourceIfUrl(payload.sourceInput, payload.sourceType);
+  const inputSnippet = (enrichedInput || '').trim();
 
   const systemInstruction = `You are ADNETIKS AI Video Director, an award-winning creative director specializing in short-form 9:16 video ads for Reels, TikTok, Shorts, and X.
 Brand: ${brandName} (${payload.brandProfile.archetype})
