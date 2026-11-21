@@ -4,7 +4,7 @@
  * ADNETIKS Brand Identity & Customer Avatar Intelligence Studio
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrandProfile, CustomerAvatar, BrandArchetype, SocialPlatform } from '../types';
 import BrandSetupWizard from './BrandSetupWizard';
 import {
@@ -19,6 +19,8 @@ import {
   Layers,
   ArrowRight,
   Wand2,
+  BrainCircuit,
+  RefreshCw,
 } from 'lucide-react';
 
 interface BrandAvatarStudioProps {
@@ -46,10 +48,112 @@ export default function BrandAvatarStudio({
   showNotificationToast,
   userRole,
 }: BrandAvatarStudioProps) {
-  const [activeSection, setActiveSection] = useState<'setup' | 'brand' | 'avatars' | 'receptivity'>(() => {
+  const [activeSection, setActiveSection] = useState<'setup' | 'brand' | 'avatars' | 'memory' | 'receptivity'>(() => {
     const configured = typeof window !== 'undefined' && localStorage.getItem('adnetiks_brand_configured') === 'true';
     return configured ? 'avatars' : 'setup';
   });
+
+  // Phase 3 Closed-Loop Brand Brain Memory State
+  const [learnedPatterns, setLearnedPatterns] = useState<
+    Array<{
+      id: string;
+      brandName: string;
+      source: 'ab_winner' | 'live_telemetry' | 'manual_insight';
+      platform: string;
+      winningVariant?: string;
+      hookAngle: string;
+      takeaway: string;
+      evidenceMetric: string;
+      confidence: number;
+      active: boolean;
+      createdAt: string;
+    }>
+  >([]);
+  const [isSyncingMemory, setIsSyncingMemory] = useState(false);
+  const [manualRuleText, setManualRuleText] = useState('');
+  const [manualRulePlatform, setManualRulePlatform] = useState('multi-channel');
+
+  const loadBrandMemory = () => {
+    fetch('/api/memory')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (Array.isArray(d?.patterns)) setLearnedPatterns(d.patterns);
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadBrandMemory();
+  }, []);
+
+  const handleSynthesizeMemory = async () => {
+    setIsSyncingMemory(true);
+    try {
+      const res = await fetch('/api/memory/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandName: brandProfile.name }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.patterns)) setLearnedPatterns(data.patterns);
+        if (showNotificationToast) {
+          showNotificationToast(
+            'Brand Brain Synced',
+            `Synthesized ${data.newlyLearned?.length || 0} winning pattern(s) from live attribution & A/B tests.`
+          );
+        }
+      }
+    } finally {
+      setIsSyncingMemory(false);
+    }
+  };
+
+  const handleAddManualMemoryRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualRuleText.trim()) return;
+    const res = await fetch('/api/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        brandName: brandProfile.name,
+        source: 'manual_insight',
+        platform: manualRulePlatform,
+        hookAngle: 'Creator-Verified Rule',
+        takeaway: manualRuleText.trim(),
+        evidenceMetric: 'Owner Brand Rule',
+        confidence: 100,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.patterns)) setLearnedPatterns(data.patterns);
+      setManualRuleText('');
+      if (showNotificationToast) {
+        showNotificationToast('Brand Rule Learned', 'Saved to Closed-Loop Memory and active for all future campaigns.');
+      }
+    }
+  };
+
+  const handleToggleMemoryRule = async (id: string, active: boolean) => {
+    const res = await fetch(`/api/memory/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.patterns)) setLearnedPatterns(data.patterns);
+    }
+  };
+
+  const handleDeleteMemoryRule = async (id: string) => {
+    const res = await fetch(`/api/memory/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.patterns)) setLearnedPatterns(data.patterns);
+    }
+  };
   const [newAttribute, setNewAttribute] = useState('');
   const [newBannedWord, setNewBannedWord] = useState('');
   const [newPillar, setNewPillar] = useState('');
@@ -216,6 +320,18 @@ export default function BrandAvatarStudio({
             Demographics ({avatars.length})
           </button>
           <button
+            onClick={() => {
+              setActiveSection('memory');
+              loadBrandMemory();
+            }}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
+              activeSection === 'memory' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <BrainCircuit className="w-3.5 h-3.5 text-purple-300" />
+            Learned Memory ({learnedPatterns.filter((p) => p.active).length})
+          </button>
+          <button
             onClick={() => setActiveSection('receptivity')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
               activeSection === 'receptivity' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
@@ -244,6 +360,129 @@ export default function BrandAvatarStudio({
           }}
           showNotificationToast={showNotificationToast || (() => {})}
         />
+      )}
+
+      {/* SECTION: Closed-Loop Brand Brain Memory */}
+      {activeSection === 'memory' && (
+        <div className="space-y-5">
+          <div className="bg-[#111116] border border-purple-700/40 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase font-bold text-purple-300 bg-purple-950/60 border border-purple-700/60 px-2 py-0.5 rounded-full">
+                <BrainCircuit className="w-3 h-3" />
+                Closed-Loop Self-Optimizing Memory
+              </div>
+              <h2 className="text-base font-extrabold text-white">
+                Winning Patterns Automatically Injected Into Future Campaigns
+              </h2>
+              <p className="text-xs text-[#8B8BA8] max-w-2xl">
+                Every A/B split-test winner and live first-party conversion signal gets distilled here and automatically injected into Campaign Studio copy, audience targeting, and AI Video scripts.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={isSyncingMemory}
+              onClick={handleSynthesizeMemory}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 shrink-0 shadow-lg transition-all"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingMemory ? 'animate-spin' : ''}`} />
+              <span>{isSyncingMemory ? 'Synthesizing...' : 'Sync Signals → Brand Brain'}</span>
+            </button>
+          </div>
+
+          {/* Add Custom Brand Learning Rule */}
+          <form
+            onSubmit={handleAddManualMemoryRule}
+            className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row gap-2.5"
+          >
+            <select
+              value={manualRulePlatform}
+              onChange={(e) => setManualRulePlatform(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+            >
+              <option value="multi-channel">All Channels</option>
+              <option value="instagram">Instagram</option>
+              <option value="tiktok">TikTok</option>
+              <option value="x">X / Twitter</option>
+              <option value="linkedin">LinkedIn</option>
+            </select>
+            <input
+              type="text"
+              value={manualRuleText}
+              onChange={(e) => setManualRuleText(e.target.value)}
+              placeholder="Add a proven rule (e.g. 'Raw studio clips outperform polished promo graphics 3x with our core fans')"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Teach Brand Brain</span>
+            </button>
+          </form>
+
+          {/* Learned Patterns List */}
+          {learnedPatterns.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-[#111116] border border-dashed border-[#2A2A38] text-center space-y-2">
+              <BrainCircuit className="w-8 h-8 text-purple-400 mx-auto opacity-70" />
+              <div className="text-sm font-bold text-white">No Learned Patterns Stored Yet</div>
+              <p className="text-xs text-[#8B8BA8] max-w-md mx-auto">
+                Click <strong>Sync Signals → Brand Brain</strong> above to distill live conversion telemetry &amp; A/B test winners, or add a proven rule manually.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {learnedPatterns.map((pat) => (
+                <div
+                  key={pat.id}
+                  className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                    pat.active
+                      ? 'bg-[#111116] border-purple-700/50'
+                      : 'bg-[#0A0A0C] border-[#1F1F2A] opacity-60'
+                  }`}
+                >
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-mono uppercase font-bold px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-700/60">
+                        {pat.source.replace('_', ' ')}
+                      </span>
+                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-700">
+                        {pat.platform}
+                      </span>
+                      <span className="text-[10px] font-mono text-emerald-400 font-semibold">
+                        {pat.evidenceMetric}
+                      </span>
+                    </div>
+                    <div className="text-xs font-bold text-white">{pat.hookAngle}</div>
+                    <p className="text-xs text-slate-300 leading-relaxed">{pat.takeaway}</p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleMemoryRule(pat.id, !pat.active)}
+                      className={`px-3 py-1 rounded-lg text-[11px] font-bold border transition-all ${
+                        pat.active
+                          ? 'bg-emerald-950/60 border-emerald-600/70 text-emerald-300'
+                          : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {pat.active ? 'Active in Prompts ✓' : 'Paused'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteMemoryRule(pat.id)}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition-colors"
+                      title="Delete memory rule"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* SECTION 1: Brand Voice & Rules */}

@@ -78,6 +78,8 @@ export default function AnalyticsDashboard({
     }>;
   } | null>(null);
   const [isRefreshingTelemetry, setIsRefreshingTelemetry] = useState(false);
+  const [isSyncingMemory, setIsSyncingMemory] = useState(false);
+  const [activeMemoryCount, setActiveMemoryCount] = useState(0);
 
   const fetchLiveTelemetry = () => {
     setIsRefreshingTelemetry(true);
@@ -88,6 +90,35 @@ export default function AnalyticsDashboard({
       })
       .catch(() => {})
       .finally(() => setIsRefreshingTelemetry(false));
+
+    fetch('/api/memory')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m) => {
+        if (m?.ok && typeof m.activeCount === 'number') setActiveMemoryCount(m.activeCount);
+      })
+      .catch(() => {});
+  };
+
+  const handleSyncSignalsToMemory = async () => {
+    setIsSyncingMemory(true);
+    try {
+      const res = await fetch('/api/memory/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error('Sync failed');
+      const data = await res.json();
+      setActiveMemoryCount(data.activeCount || 0);
+      showNotificationToast(
+        'Closed-Loop Memory Updated',
+        `Distilled ${data.newlyLearned?.length || 0} proven pattern(s) from live telemetry & A/B winners (${data.activeCount} active rules injected into future campaigns).`
+      );
+    } catch {
+      showNotificationToast('Memory Sync Error', 'Could not synthesize closed-loop patterns.');
+    } finally {
+      setIsSyncingMemory(false);
+    }
   };
 
   useEffect(() => {
@@ -128,14 +159,30 @@ export default function AnalyticsDashboard({
               REAL SERVER DATA
             </span>
           </div>
-          <button
-            type="button"
-            onClick={fetchLiveTelemetry}
-            className="px-2.5 py-1 rounded-lg bg-[#18181F] hover:bg-[#22222E] border border-[#2A2A38] text-[11px] font-semibold text-slate-300 flex items-center gap-1.5"
-          >
-            <RefreshCw className={`w-3 h-3 ${isRefreshingTelemetry ? 'animate-spin text-emerald-400' : ''}`} />
-            <span>Refresh Live</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={isSyncingMemory}
+              onClick={handleSyncSignalsToMemory}
+              className="px-3 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-[11px] font-bold text-white flex items-center gap-1.5 shadow-md transition-all"
+              title="Feed real live clicks, pixel conversions & A/B winners back into your Brand Brain"
+            >
+              <Cpu className={`w-3.5 h-3.5 ${isSyncingMemory ? 'animate-spin' : ''}`} />
+              <span>
+                {isSyncingMemory
+                  ? 'Learning...'
+                  : `Sync Signals → Brand Brain (${activeMemoryCount} Active)`}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={fetchLiveTelemetry}
+              className="px-2.5 py-1 rounded-lg bg-[#18181F] hover:bg-[#22222E] border border-[#2A2A38] text-[11px] font-semibold text-slate-300 flex items-center gap-1.5"
+            >
+              <RefreshCw className={`w-3 h-3 ${isRefreshingTelemetry ? 'animate-spin text-emerald-400' : ''}`} />
+              <span>Refresh Live</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

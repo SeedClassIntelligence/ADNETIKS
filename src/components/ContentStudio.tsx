@@ -269,8 +269,9 @@ export default function ContentStudio({
   const [pixelLastFired, setPixelLastFired] = useState('Awaiting first live event');
   const [mintedUtmLink, setMintedUtmLink] = useState<{ slug: string; shortUrl: string; clicks: number } | null>(null);
   const [isMintingUtm, setIsMintingUtm] = useState(false);
+  const [activeMemoryCount, setActiveMemoryCount] = useState(0);
 
-  // Hydrate real conversion count from /api/events
+  // Hydrate real conversion count & active closed-loop Brand Memory count
   useEffect(() => {
     fetch('/api/events')
       .then((r) => (r.ok ? r.json() : null))
@@ -281,6 +282,13 @@ export default function ContentStudio({
             setPixelLastFired(new Date(d.recentEvents[0].timestamp).toLocaleTimeString());
           }
         }
+      })
+      .catch(() => {});
+
+    fetch('/api/memory')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m) => {
+        if (m?.ok && typeof m.activeCount === 'number') setActiveMemoryCount(m.activeCount);
       })
       .catch(() => {});
   }, []);
@@ -1909,6 +1917,10 @@ export default function ContentStudio({
             <span className="px-2.5 py-1 rounded-lg bg-[#0A0A0C] border border-emerald-800/60 text-emerald-300 font-semibold flex items-center gap-1.5">
               <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
               A/B Copy Ready ({selectedPlatforms.length} Channels)
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-purple-950/40 border border-purple-700/60 text-purple-200 font-semibold flex items-center gap-1.5">
+              <Cpu className="w-3.5 h-3.5 text-purple-400" />
+              Brand Memory: {activeMemoryCount} Active Rule{activeMemoryCount === 1 ? '' : 's'}
             </span>
           </div>
 

@@ -9,6 +9,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { generateText } from './llmProvider.ts';
 import { extractFirstUrl, scrapeUrlContext } from './ingest.ts';
+import { buildActiveMemoryPromptBlock } from './memory.ts';
 
 async function enrichSourceIfUrl(sourceInput: string, sourceType?: string) {
   const url = extractFirstUrl(sourceInput || '');
@@ -61,6 +62,7 @@ export interface GenerateContentPayload {
 
 export async function handleGenerateContent(payload: GenerateContentPayload) {
   const { enrichedInput, scraped } = await enrichSourceIfUrl(payload.sourceInput, payload.sourceType);
+  const { promptBlock: memoryPromptBlock, activeCount: appliedMemoryCount } = buildActiveMemoryPromptBlock();
   const systemInstruction = `You are ADNETIKS AI, an elite brand strategist and multi-platform social media growth director.
 Brand Profile:
 - Brand Name: ${payload.brandProfile.name}
@@ -76,7 +78,7 @@ Target Customer Avatar:
 Task:
 Synthesize social campaign copy from the provided source input (${payload.sourceType}):
 "${enrichedInput.slice(0, 2200)}"
-Campaign Goal: ${payload.campaignGoal || 'High organic engagement and qualified inbound leads'}
+Campaign Goal: ${payload.campaignGoal || 'High organic engagement and qualified inbound leads'}${memoryPromptBlock}
 
 Generate a structured response for these platforms: ${payload.platforms.join(', ')}.
 For each platform, create:
@@ -120,7 +122,7 @@ Return STRICTLY valid JSON conforming to this schema:
     const responseText = await generateText(userPrompt, systemInstruction);
     if (responseText) {
       const parsed = JSON.parse(responseText);
-      return { ...parsed, scraped };
+      return { ...parsed, scraped, appliedMemoryCount };
     }
   } catch (error) {
     console.warn('LLM API call failed or encountered error, falling back to heuristic engine:', error);
@@ -133,7 +135,7 @@ Return STRICTLY valid JSON conforming to this schema:
         sourceInput: `${scraped.title}${scraped.description ? ` — ${scraped.description}` : ''}`,
       }
     : payload;
-  return { ...generateHeuristicContent(groundedPayload), scraped };
+  return { ...generateHeuristicContent(groundedPayload), scraped, appliedMemoryCount };
 }
 
 function generateHeuristicContent(payload: GenerateContentPayload) {
@@ -310,11 +312,12 @@ export interface DiscoverAvatarsPayload {
 
 export async function handleDiscoverAvatars(payload: DiscoverAvatarsPayload) {
   const { enrichedInput } = await enrichSourceIfUrl(payload.sourceInput, payload.sourceType);
+  const { promptBlock: memoryPromptBlock } = buildActiveMemoryPromptBlock();
   const systemInstruction = `You are ADNETIKS AI, an elite brand strategist, customer avatar intelligence architect, and go-to-market director.
 Analyze the following ingested product, service, or campaign offer from ${payload.brandProfile.name}:
 - Source Type: ${payload.sourceType}
 - Source Details: "${enrichedInput.slice(0, 2400)}"
-- Campaign Goal: ${payload.campaignGoal || 'Drive high-conversion organic demand and qualified buyers'}
+- Campaign Goal: ${payload.campaignGoal || 'Drive high-conversion organic demand and qualified buyers'}${memoryPromptBlock}
 
 Task:
 Synthesize 2 to 3 highest-converting Target Customer Avatars (greatest prospective buyers) tailored specifically to this exact product, service, or campaign offering.
@@ -667,6 +670,7 @@ export async function handleGenerateAiVideo(payload: GenerateAiVideoPayload) {
   const brandName = payload.brandProfile.name || 'ADNETIKS';
   const avatarName = payload.customerAvatar?.name || 'Ideal Target Prospect';
   const { enrichedInput } = await enrichSourceIfUrl(payload.sourceInput, payload.sourceType);
+  const { promptBlock: memoryPromptBlock } = buildActiveMemoryPromptBlock();
   const inputSnippet = (enrichedInput || '').trim();
 
   const systemInstruction = `You are ADNETIKS AI Video Director, an award-winning creative director specializing in short-form 9:16 video ads for Reels, TikTok, Shorts, and X.
@@ -676,7 +680,7 @@ Voice Tone: ${payload.voiceTone || 'Energetic Founder'}
 Music Style: ${payload.musicStyle || 'Phonk Synthwave Momentum'}
 
 Source Offer Context:
-"${inputSnippet.slice(0, 1500)}"
+"${inputSnippet.slice(0, 1500)}"${memoryPromptBlock}
 
 Task:
 Generate a high-converting 3-beat retention arc for a 15-second viral video ad.

@@ -18,6 +18,13 @@ import {
   startBackgroundScheduler,
   buildEmbeddablePixelScript,
 } from './src/server/delivery.ts';
+import {
+  listLearnedPatterns,
+  recordLearnedPattern,
+  toggleLearnedPattern,
+  deleteLearnedPattern,
+  synthesizeMemoryFromSignals,
+} from './src/server/memory.ts';
 
 // Custom Vite plugin to handle /api/* server endpoints directly in dev
 function apiServerPlugin(): Plugin {
@@ -443,6 +450,78 @@ function apiServerPlugin(): Plugin {
           res.statusCode = 200;
           res.end(js);
           return;
+        }
+
+        // Phase 3: Closed-Loop Brand Brain Memory Engine (/api/memory)
+        if (req.url?.startsWith('/api/memory/synthesize') && req.method === 'POST') {
+          let bodyStr = '';
+          req.on('data', (chunk) => (bodyStr += chunk));
+          req.on('end', () => {
+            try {
+              const body = JSON.parse(bodyStr || '{}');
+              const result = synthesizeMemoryFromSignals(body.brandName);
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({ ok: true, ...result }));
+            } catch (err: any) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 500;
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
+        if (req.url?.startsWith('/api/memory')) {
+          const cleanUrl = req.url.split('?')[0];
+          const idPart = cleanUrl.replace(/^\/api\/memory\/?/, '');
+
+          if (req.method === 'GET' && !idPart) {
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ok: true, ...listLearnedPatterns() }));
+            return;
+          }
+
+          if (req.method === 'POST' && !idPart) {
+            let bodyStr = '';
+            req.on('data', (chunk) => (bodyStr += chunk));
+            req.on('end', () => {
+              try {
+                const body = JSON.parse(bodyStr || '{}');
+                const pattern = recordLearnedPattern(body);
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 200;
+                res.end(JSON.stringify({ ok: true, pattern, ...listLearnedPatterns() }));
+              } catch (err: any) {
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 400;
+                res.end(JSON.stringify({ ok: false, error: err.message }));
+              }
+            });
+            return;
+          }
+
+          if (req.method === 'PATCH' && idPart) {
+            let bodyStr = '';
+            req.on('data', (chunk) => (bodyStr += chunk));
+            req.on('end', () => {
+              const body = JSON.parse(bodyStr || '{}');
+              const updated = toggleLearnedPattern(decodeURIComponent(idPart), body.active);
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = updated ? 200 : 404;
+              res.end(JSON.stringify({ ok: !!updated, pattern: updated, ...listLearnedPatterns() }));
+            });
+            return;
+          }
+
+          if (req.method === 'DELETE' && idPart) {
+            const removed = deleteLearnedPattern(decodeURIComponent(idPart));
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = removed ? 200 : 404;
+            res.end(JSON.stringify({ ok: removed, ...listLearnedPatterns() }));
+            return;
+          }
         }
 
         next();
