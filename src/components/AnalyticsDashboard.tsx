@@ -148,7 +148,7 @@ export default function AnalyticsDashboard({
     <div className="space-y-8">
       
       {/* LIVE FIRST-PARTY ATTRIBUTION & DELIVERY TELEMETRY (REAL SERVER DATA) */}
-      <div className="bg-[#111116] border border-emerald-700/40 rounded-2xl p-5 space-y-4 shadow-lg">
+      <div data-tour="live-telemetry-card" className="bg-[#111116] border border-emerald-700/40 rounded-2xl p-5 space-y-4 shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />

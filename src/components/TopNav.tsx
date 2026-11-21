@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Users,
+  Compass,
 } from 'lucide-react';
 
 interface TopNavProps {
@@ -30,6 +31,7 @@ interface TopNavProps {
   isDark: boolean;
   toggleTheme: () => void;
   onNewCampaignClick: () => void;
+  onStartTour?: () => void;
   brandName?: string;
   brandArchetype?: string;
   activeCampaignTitle?: string;
@@ -45,6 +47,7 @@ export default function TopNav({
   isDark,
   toggleTheme,
   onNewCampaignClick,
+  onStartTour,
   brandName = 'ADNETIKS',
   brandArchetype = 'The Catalyst',
   activeCampaignTitle,
@@ -69,6 +72,7 @@ export default function TopNav({
     signals: { step: '04', title: 'Analytics & Inbox', subtitle: 'Live attribution, growth analytics & fan replies' },
     analytics: { step: '04', title: 'Analytics & Inbox', subtitle: 'Live attribution, growth analytics & fan replies' },
     service_agents: { step: '04', title: 'Analytics & Inbox', subtitle: 'Live attribution, growth analytics & fan replies' },
+    resources: { title: 'Templates & Resources', subtitle: 'High-converting campaign blueprints, guided tours & brand kit' },
     integrations: { title: 'AI Engines & Connectors', subtitle: 'Plug in any LLM, code assistant, or publishing channel' },
   };
 
@@ -85,7 +89,7 @@ export default function TopNav({
                 STEP {currentMeta.step}
               </span>
             )}
-            <h1 className="text-sm sm:text-base font-extrabold text-white tracking-tight whitespace-nowrap shrink-0">
+            <h1 className="text-sm sm:text-base font-extrabold text-white tracking-tight truncate">
               {currentMeta.title}
             </h1>
             <ChevronRight className="w-3.5 h-3.5 text-[#52526B] hidden xl:block shrink-0" />
@@ -95,8 +99,19 @@ export default function TopNav({
           </div>
         </div>
 
-        {/* Right: Active Brand Pill + Role + Utilities + New Campaign CTA */}
+        {/* Right: Guided Tour + Active Brand Pill + Role + Utilities + New Campaign CTA */}
         <div className="flex items-center gap-2 shrink-0">
+          {onStartTour && (
+            <button
+              onClick={onStartTour}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-cyan-950/40 hover:bg-cyan-950/70 border border-cyan-800/60 text-cyan-300 hover:text-white text-xs font-semibold transition-all"
+              title="Launch interactive step-by-step Guided Tour with tooltips for this section"
+            >
+              <Compass className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline">Guided Tour</span>
+            </button>
+          )}
+
           {/* Active Brand Brain Switcher Pill */}
           <button
             onClick={() => setActiveTab('brand_avatar')}

@@ -272,7 +272,7 @@ export default function SmartScheduler({
         </div>
 
         {/* Action Controls */}
-        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+        <div data-tour="delivery-bridge-controls" className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
           <button
             onClick={() => setShowConnectorPanel(!showConnectorPanel)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-cyan-300 text-xs font-semibold rounded-lg border border-cyan-800/60 transition-colors"

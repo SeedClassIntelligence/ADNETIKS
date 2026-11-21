@@ -18,6 +18,7 @@ import {
   Plug,
   Plus,
   Zap,
+  BookOpen,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -216,8 +217,31 @@ export default function Sidebar({
         </nav>
       </div>
 
-      {/* Bottom Utility: AI Engine & Connectors + Role Status */}
+      {/* Bottom Utility: Resources & Templates + AI Engine & Connectors + Role Status */}
       <div className="p-2 border-t border-[#1F1F2A]/80 space-y-1.5">
+        <button
+          onClick={() => setActiveTab('resources')}
+          className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-xs font-medium transition-all relative group ${
+            activeTab === 'resources'
+              ? 'bg-[#18181F] text-white border border-red-500/50'
+              : 'text-[#8B8BA8] hover:text-white hover:bg-[#111116]'
+          }`}
+          title="Resources, High-Converting Templates & Guided Tours"
+        >
+          <BookOpen
+            className={`w-4 h-4 shrink-0 ${
+              activeTab === 'resources' ? 'text-red-400' : 'text-[#8B8BA8] group-hover:text-red-400'
+            }`}
+          />
+          <span
+            className={`overflow-hidden whitespace-nowrap text-left transition-all duration-200 ${
+              isHovered ? 'opacity-100 max-w-[160px]' : 'opacity-0 max-w-0'
+            }`}
+          >
+            Templates &amp; Docs
+          </span>
+        </button>
+
         <button
           onClick={() => setActiveTab('integrations')}
           className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-xs font-medium transition-all relative group ${

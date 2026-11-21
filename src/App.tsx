@@ -17,9 +17,12 @@ import SplitTestLab from './components/SplitTestLab';
 import SmartScheduler from './components/SmartScheduler';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import IntegrationsHub from './components/IntegrationsHub';
+import ResourcesPage from './components/ResourcesPage';
+import GuidedTourOverlay, { normalizeTourSection } from './components/GuidedTourOverlay';
 import StakeholderReportModal from './components/StakeholderReportModal';
 import NotificationDrawer from './components/NotificationDrawer';
 import AdnetiksLogo from './components/AdnetiksLogo';
+import { CampaignTemplate } from './data/campaignTemplates';
 
 import {
   BrandProfile,
@@ -114,6 +117,8 @@ export default function App() {
   // Modal & Drawer States
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+  const [isTourOpen, setIsTourOpen] = useState(false);
+  const [preloadedTemplate, setPreloadedTemplate] = useState<CampaignTemplate | null>(null);
 
   // Active Campaign Project & Sub-Pillar Tabs
   const [activeCampaignId, setActiveCampaignId] = useState<string>(() => campaigns[0]?.id || 'camp-q4-surge');
@@ -477,6 +482,7 @@ export default function App() {
           isDark={isDark}
           toggleTheme={toggleTheme}
           onNewCampaignClick={handleCreateCampaign}
+          onStartTour={() => setIsTourOpen(true)}
           brandName={brandProfile.name}
           brandArchetype={brandProfile.archetype}
           activeCampaignTitle={activeCampaignTitle}
@@ -547,6 +553,8 @@ export default function App() {
               onSelectCampaign={setActiveCampaignId}
               onCreateCampaign={handleCreateCampaign}
               onUpdateCampaignTitle={handleUpdateCampaignTitle}
+              preloadedTemplate={preloadedTemplate}
+              onClearPreloadedTemplate={() => setPreloadedTemplate(null)}
             />
           )}
 
@@ -575,7 +583,7 @@ export default function App() {
                     Manage your automated multi-platform publishing queue and live A/B hook tests in one place.
                   </p>
                 </div>
-                <div className="flex items-center gap-1 bg-[#111116] p-1 rounded-xl border border-[#1F1F2A] self-start sm:self-auto">
+                <div data-tour="distribution-tabs" className="flex items-center gap-1 bg-[#111116] p-1 rounded-xl border border-[#1F1F2A] self-start sm:self-auto">
                   <button
                     onClick={() => setDistributionSubTab('queue')}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -629,7 +637,7 @@ export default function App() {
                     Track real clicks, conversions &amp; trends, feed winners into your Brand Brain, and resolve fan/customer replies.
                   </p>
                 </div>
-                <div className="flex items-center gap-1 bg-[#111116] p-1 rounded-xl border border-[#1F1F2A] self-start sm:self-auto">
+                <div data-tour="signals-tabs" className="flex items-center gap-1 bg-[#111116] p-1 rounded-xl border border-[#1F1F2A] self-start sm:self-auto">
                   <button
                     onClick={() => setSignalsSubTab('analytics')}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -676,6 +684,21 @@ export default function App() {
             </div>
           )}
 
+          {/* Resources, High-Converting Templates & Playbooks */}
+          {activeTab === 'resources' && (
+            <ResourcesPage
+              onUseTemplate={(tmpl) => {
+                setPreloadedTemplate(tmpl);
+                setActiveTab('studio');
+              }}
+              onStartSectionTour={(sectionKey) => {
+                handleNavigateTab(sectionKey);
+                setTimeout(() => setIsTourOpen(true), 120);
+              }}
+              showNotificationToast={showNotificationToast}
+            />
+          )}
+
           {/* AI Engines & Social Connectors */}
           {activeTab === 'integrations' && (
             <IntegrationsHub showNotificationToast={showNotificationToast} />
@@ -720,6 +743,17 @@ export default function App() {
         brandProfile={brandProfile}
         posts={posts}
         splitTests={splitTests}
+      />
+
+      {/* Interactive Section Guided Tour & Spotlight Tooltips */}
+      <GuidedTourOverlay
+        isOpen={isTourOpen}
+        sectionKey={normalizeTourSection(activeTab)}
+        onClose={() => setIsTourOpen(false)}
+        onNavigateSection={(sec) => {
+          handleNavigateTab(sec);
+          setIsTourOpen(true);
+        }}
       />
 
       {/* Push Notification Toast Alert */}

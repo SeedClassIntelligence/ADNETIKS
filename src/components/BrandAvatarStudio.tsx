@@ -291,7 +291,7 @@ export default function BrandAvatarStudio({
         </div>
 
         {/* Section Tabs */}
-        <div className="flex flex-wrap items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 self-start lg:self-auto">
+        <div data-tour="brand-section-tabs" className="flex flex-wrap items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 self-start lg:self-auto">
           <button
             onClick={() => setActiveSection('setup')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
@@ -320,6 +320,7 @@ export default function BrandAvatarStudio({
             Demographics ({avatars.length})
           </button>
           <button
+            data-tour="brand-memory-tab"
             onClick={() => {
               setActiveSection('memory');
               loadBrandMemory();

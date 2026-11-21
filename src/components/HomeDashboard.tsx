@@ -139,7 +139,7 @@ export default function HomeDashboard({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div data-tour="workflow-strip" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {workflowSteps.map((step) => {
             const Icon = step.icon;
             return (
@@ -190,7 +190,7 @@ export default function HomeDashboard({
         {/* Left 2 Cols: Real Campaign Projects + Upcoming Delivery */}
         <div className="lg:col-span-2 space-y-6">
           {/* Active Campaigns */}
-          <div className="space-y-3">
+          <div data-tour="saved-campaigns" className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FolderKanban className="w-4 h-4 text-red-500" />
@@ -309,7 +309,7 @@ export default function HomeDashboard({
         </div>
 
         {/* Right Col: Brand Brain & Audience Demographics */}
-        <div className="space-y-4">
+        <div data-tour="audience-demographics" className="space-y-4">
           <div className="p-4 rounded-2xl bg-[#111116] border border-[#1F1F2A] space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">

@@ -87,6 +87,8 @@ import {
 } from 'lucide-react';
 import AdnetiksLogo from './AdnetiksLogo';
 import { renderAiVideoToBlob, uploadMediaBlob } from '../utils/videoExporter';
+import { CAMPAIGN_TEMPLATES, CampaignTemplate, TemplateCategory } from '../data/campaignTemplates';
+import { InfoTip } from './GuidedTourOverlay';
 
 interface ContentStudioProps {
   brandProfile: BrandProfile;
@@ -109,6 +111,8 @@ interface ContentStudioProps {
   onSelectCampaign?: (id: string) => void;
   onCreateCampaign?: () => void;
   onUpdateCampaignTitle?: (id: string, title: string) => void;
+  preloadedTemplate?: CampaignTemplate | null;
+  onClearPreloadedTemplate?: () => void;
 }
 
 export default function ContentStudio({
@@ -132,6 +136,8 @@ export default function ContentStudio({
   onSelectCampaign,
   onCreateCampaign,
   onUpdateCampaignTitle,
+  preloadedTemplate,
+  onClearPreloadedTemplate,
 }: ContentStudioProps) {
   // Active Campaign Project & Focused Left-Column Stepper
   const activeCampaignObj = campaigns.find((c) => c.id === activeCampaignId) || campaigns[0];
@@ -293,9 +299,9 @@ export default function ContentStudio({
       .catch(() => {});
   }, []);
 
-  // Multi-Slide Carousel State
+  // Multi-Slide Carousel State (populated dynamically by Campaign Templates)
   const [activeCarouselSlide, setActiveCarouselSlide] = useState(0);
-  const carouselSlides = [
+  const [carouselSlides, setCarouselSlides] = useState([
     {
       slideNumber: 1,
       title: 'The Silent CAC Killer',
@@ -320,7 +326,12 @@ export default function ContentStudio({
       body: 'Stop guessing what your target accounts want to read. Align creative resonance with automated delivery.',
       visualCue: 'Clear CTA button with direct link to live platform demo',
     },
-  ];
+  ]);
+
+  // High-Converting Campaign Template Library Modal State
+  const [showTemplateLibrary, setShowTemplateLibrary] = useState(false);
+  const [templateCategoryFilter, setTemplateCategoryFilter] = useState<'all' | TemplateCategory>('all');
+  const [templateSearch, setTemplateSearch] = useState('');
 
   // Short-Form Video: AI Video Director + Desktop/Phone Camera + Upload + Campaign Attachment
   const [videoProductionMode, setVideoProductionMode] = useState<'ai_director' | 'record' | 'upload'>('ai_director');
@@ -1475,6 +1486,62 @@ export default function ContentStudio({
     reader.readAsDataURL(file);
   };
 
+  // Apply a High-Converting Campaign Template to the entire Builder in 1 Click
+  const handleApplyCampaignTemplate = (tmpl: CampaignTemplate) => {
+    handleCampaignTitleChange(tmpl.title);
+    setSourceType(tmpl.sourceType);
+    setSourceInput(tmpl.sourceInput);
+    setCampaignGoal(tmpl.campaignGoal);
+    setSelectedPlatforms(tmpl.recommendedPlatforms);
+    setActivePlatformPreview(tmpl.recommendedPlatforms[0] || 'instagram');
+    setSelectedFormat(tmpl.recommendedFormat);
+    setAdHeadline(tmpl.adHeadline);
+    setAdCtaText(tmpl.adCtaText);
+    setAdDestinationUrl(tmpl.adDestinationUrl);
+    setPixelEvent(tmpl.pixelEvent);
+    setAiVideoTitle(tmpl.title);
+    setAiVideoHookAngle(tmpl.variantA.hookAngle);
+    setVideoBeats(tmpl.videoBeats);
+    setCurrentVideoBeatIndex(0);
+    setCarouselSlides(tmpl.carouselSlides);
+    setActiveCarouselSlide(0);
+
+    setGeneratedVariants((prev) => {
+      const next = { ...prev };
+      (Object.keys(next) as SocialPlatform[]).forEach((plt) => {
+        next[plt] = {
+          variantA: {
+            hookAngle: tmpl.variantA.hookAngle,
+            content: tmpl.variantA.content,
+            hashtags: tmpl.variantA.hashtags,
+            mediaUrl: uploadedScreenshot || prev[plt]?.variantA?.mediaUrl,
+          },
+          variantB: {
+            hookAngle: tmpl.variantB.hookAngle,
+            content: tmpl.variantB.content,
+            hashtags: tmpl.variantB.hashtags,
+            mediaUrl: uploadedScreenshot || prev[plt]?.variantB?.mediaUrl,
+          },
+        };
+      });
+      return next;
+    });
+
+    setShowTemplateLibrary(false);
+    showNotificationToast(
+      'High-Converting Template Loaded',
+      `"${tmpl.title}" populated A/B copy, Sponsored Ad, 3-beat Video Script & 4-slide Carousel.`
+    );
+  };
+
+  // Auto-apply template selected from the Resources & Templates page
+  useEffect(() => {
+    if (preloadedTemplate) {
+      handleApplyCampaignTemplate(preloadedTemplate);
+      if (onClearPreloadedTemplate) onClearPreloadedTemplate();
+    }
+  }, [preloadedTemplate]);
+
   // Auto-fill campaign when deployed from Trending Monitor
   useEffect(() => {
     if (preloadedTheme) {
@@ -1779,7 +1846,7 @@ export default function ContentStudio({
     <div className="space-y-6">
       {/* CAMPAIGN PROJECTS SWITCHER BAR */}
       {campaigns.length > 0 && (
-        <div className="flex items-center justify-between gap-2 pb-1">
+        <div data-tour="campaign-projects-bar" className="flex items-center justify-between gap-2 pb-1">
           <div className="flex items-center gap-2 overflow-x-auto scrollbar-none min-w-0 flex-1">
             <span className="text-[10px] font-mono uppercase tracking-wider text-[#52526B] shrink-0">
               Projects:
@@ -1851,8 +1918,18 @@ export default function ContentStudio({
             </div>
           </div>
 
-          {/* Right: Agnostic AI Engine / Code Assistant Plug-in Dock */}
-          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          {/* Right: Templates Picker + Agnostic AI Engine / Code Assistant Plug-in Dock */}
+          <div data-tour="campaign-ai-dock" className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowTemplateLibrary(true)}
+              className="px-3.5 py-2.5 rounded-xl bg-amber-950/40 hover:bg-amber-950/70 border border-amber-600/60 text-amber-200 text-xs font-bold flex items-center gap-1.5 transition-all"
+              title="Browse 12 high-converting cross-industry campaign templates & populate in 1 click"
+            >
+              <Layers className="w-3.5 h-3.5 text-amber-400" />
+              <span>Templates ({CAMPAIGN_TEMPLATES.length})</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setShowLlmModal(true)}
@@ -1939,7 +2016,7 @@ export default function ContentStudio({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
       
       {/* LEFT COLUMN: Guided 3-Step Campaign Controls (5 cols) — keeps Live Preview pinned upfront! */}
-      <div className="lg:col-span-5 space-y-4">
+      <div data-tour="campaign-left-stepper" className="lg:col-span-5 space-y-4">
         
         {/* Clean 3-Step Builder Rail */}
         <div className="grid grid-cols-3 gap-1.5 bg-[#111116] p-1.5 rounded-2xl border border-[#1F1F2A]">
@@ -2749,7 +2826,7 @@ export default function ContentStudio({
       </div>
 
       {/* RIGHT COLUMN: Real-Time Preview, A/B Studio & Custom Image Generation (7 cols) */}
-      <div className="lg:col-span-7 space-y-6">
+      <div data-tour="campaign-live-preview" className="lg:col-span-7 space-y-6">
         
         {/* Output Studio Container */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
@@ -4921,6 +4998,122 @@ export default function ContentStudio({
                 <Cpu className="w-4 h-4" />
                 <span>{isSavingLlm ? 'Switching Engine...' : 'Apply Active AI Engine'}</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: HIGH-CONVERTING CAMPAIGN TEMPLATE LIBRARY (12 BLUEPRINTS) */}
+      {showTemplateLibrary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-[#111116] border border-[#2A2A38] w-full max-w-4xl rounded-2xl shadow-2xl p-6 space-y-4 max-h-[88vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-[#1F1F2A] pb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-950/70 border border-amber-700/60 flex items-center justify-center">
+                  <Layers className="w-4 h-4 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-white flex items-center gap-1.5">
+                    High-Converting Campaign Template Library ({CAMPAIGN_TEMPLATES.length})
+                    <InfoTip text="Each blueprint instantly populates your Offer brief, Variant A & B copy, Sponsored Ad headline/CTA, 3-beat AI Video script, and 4-slide Carousel deck." />
+                  </h3>
+                  <p className="text-[11px] text-[#8B8BA8]">
+                    Select a proven cross-industry campaign blueprint to populate the entire Campaign Builder in 1 click.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTemplateLibrary(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Filters + Search */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { id: 'all' as const, label: 'All (12)' },
+                  { id: 'artist_music' as const, label: 'Artist / Music' },
+                  { id: 'creator_media' as const, label: 'Creator / Media' },
+                  { id: 'ecommerce_merch' as const, label: 'E-Commerce / Merch' },
+                  { id: 'tech_startup' as const, label: 'Tech / Startup' },
+                  { id: 'agency_events' as const, label: 'Agency / Service' },
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setTemplateCategoryFilter(cat.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                      templateCategoryFilter === cat.id
+                        ? 'bg-red-600 border-red-500 text-white'
+                        : 'bg-[#0A0A0C] border-[#1F1F2A] text-[#8B8BA8] hover:text-white'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+              <div className="relative w-full sm:w-52">
+                <Search className="w-3.5 h-3.5 text-[#52526B] absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={templateSearch}
+                  onChange={(e) => setTemplateSearch(e.target.value)}
+                  placeholder="Filter blueprints..."
+                  className="w-full bg-[#0A0A0C] border border-[#2A2A38] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+                />
+              </div>
+            </div>
+
+            {/* Scrollable Blueprint Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 overflow-y-auto pr-1 flex-1">
+              {CAMPAIGN_TEMPLATES.filter((t) => {
+                const matchCat = templateCategoryFilter === 'all' || t.category === templateCategoryFilter;
+                const q = templateSearch.trim().toLowerCase();
+                const matchQ =
+                  !q ||
+                  t.title.toLowerCase().includes(q) ||
+                  t.summary.toLowerCase().includes(q) ||
+                  t.categoryLabel.toLowerCase().includes(q);
+                return matchCat && matchQ;
+              }).map((tmpl) => (
+                <div
+                  key={tmpl.id}
+                  className="p-4 rounded-xl bg-[#0A0A0C] border border-[#1F1F2A] hover:border-red-500/70 transition-all flex flex-col justify-between gap-3"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-mono uppercase font-bold px-2 py-0.5 rounded bg-red-950/60 text-red-300 border border-red-800/60">
+                        {tmpl.categoryLabel}
+                      </span>
+                      <span className="text-[10px] font-mono text-cyan-300 uppercase">
+                        {tmpl.recommendedFormat.replace('_', ' ')} · {tmpl.pixelEvent}
+                      </span>
+                    </div>
+                    <h4 className="text-xs font-extrabold text-white">{tmpl.title}</h4>
+                    <p className="text-[11px] text-[#8B8BA8] leading-snug">{tmpl.summary}</p>
+                    <p className="text-[10px] text-slate-300 italic bg-[#111116] p-2 rounded-lg border border-[#1F1F2A] line-clamp-2">
+                      &quot;{tmpl.variantA.content.split('\n')[0]}&quot;
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-[#1F1F2A]">
+                    <span className="text-[10px] font-mono text-slate-500 uppercase">
+                      {tmpl.recommendedPlatforms.join(' · ')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCampaignTemplate(tmpl)}
+                      className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold flex items-center gap-1 shadow-sm"
+                    >
+                      <Zap className="w-3 h-3 text-amber-300" />
+                      <span>Use Template</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
