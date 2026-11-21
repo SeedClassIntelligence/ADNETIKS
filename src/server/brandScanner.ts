@@ -1,16 +1,19 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * ADNETIKS Real Website Brand DNA & Visual Screenshot Scanner
- * Visits any public URL in headless Chrome/Edge, captures permanent Desktop (1440x900)
- * & Mobile (430x932) screenshots into `.adnetiks-data/media/`, extracts authentic
- * brand hex colors, typography, favicon/logo & copy, and runs multimodal vision analysis.
+ * ADNETIKS Smart CDP Website Brand DNA & Visual Screenshot Scanner
+ * Drives headless Chrome/Edge via Chrome DevTools Protocol (native Node WebSocket):
+ * - Waits intelligently for SPA hydration, async fetches, and splash/booting loaders to clear
+ * - Extracts LIVE rendered headings, body copy, computed CSS fonts & button accent colors
+ * - Captures crisp Desktop (1440x900) & Mobile (430x932) screenshots into `.adnetiks-data/media/`
  */
 
 import fs from 'fs';
+import os from 'os';
+import net from 'net';
 import path from 'path';
 import crypto from 'crypto';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { scrapeUrlContext, analyzeImageVisual } from './ingest.ts';
 
@@ -68,33 +71,330 @@ function findBrowserExecutable(): string | null {
   return null;
 }
 
-async function captureViewportScreenshot(
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.on('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 9222;
+      srv.close(() => resolve(port));
+    });
+  });
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+interface CdpCaptureResult {
+  desktopOk: boolean;
+  mobileOk: boolean;
+  renderedTitle?: string;
+  renderedHeadings: string[];
+  renderedBodyExcerpt?: string;
+  computedFonts: string[];
+  computedAccentColors: string[];
+  faviconUrl?: string;
+}
+
+/**
+ * Connects to headless Chrome via CDP, waits for SPA boot/splash loaders to finish,
+ * extracts live rendered DOM text/fonts/accent colors, and captures Desktop + Mobile PNGs.
+ */
+async function captureViaSmartCdp(
   browserPath: string,
   targetUrl: string,
-  outFile: string,
-  width: number,
-  height: number
-): Promise<boolean> {
+  desktopOutFile: string,
+  mobileOutFile: string
+): Promise<CdpCaptureResult> {
+  const port = await getFreePort();
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'adnetiks-cdp-'));
+
+  const proc = spawn(
+    browserPath,
+    [
+      '--headless=new',
+      '--disable-gpu',
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      '--hide-scrollbars',
+      `--remote-debugging-port=${port}`,
+      `--user-data-dir=${userDataDir}`,
+      'about:blank',
+    ],
+    { stdio: 'ignore' }
+  );
+
+  let ws: WebSocket | null = null;
+
   try {
-    await execFileAsync(
-      browserPath,
-      [
-        '--headless=new',
-        '--disable-gpu',
-        '--no-sandbox',
-        '--hide-scrollbars',
-        '--force-device-scale-factor=1',
-        '--virtual-time-budget=4500',
-        `--window-size=${width},${height}`,
-        `--screenshot=${outFile}`,
-        targetUrl,
-      ],
-      { timeout: 18000 }
-    );
-    return fs.existsSync(outFile) && fs.statSync(outFile).size > 2000;
-  } catch (err) {
-    console.warn(`[brand-scan] Screenshot capture failed (${width}x${height}):`, err);
-    return false;
+    // 1. Wait for Chrome CDP endpoint to come online
+    let pageWsUrl: string | null = null;
+    for (let i = 0; i < 30; i++) {
+      try {
+        const listRes = await fetch(`http://127.0.0.1:${port}/json/list`, {
+          signal: AbortSignal.timeout(1000),
+        });
+        if (listRes.ok) {
+          const pages = (await listRes.json()) as any[];
+          const pageTarget = pages.find((p) => p.type === 'page' && p.webSocketDebuggerUrl);
+          if (pageTarget) {
+            pageWsUrl = pageTarget.webSocketDebuggerUrl;
+            break;
+          }
+        }
+      } catch {
+        // retry
+      }
+      await sleep(200);
+    }
+
+    if (!pageWsUrl) {
+      throw new Error('CDP endpoint did not start in time');
+    }
+
+    // 2. Open native WebSocket to CDP
+    ws = new WebSocket(pageWsUrl);
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('CDP WS open timeout')), 5000);
+      ws!.addEventListener('open', () => {
+        clearTimeout(t);
+        resolve();
+      });
+      ws!.addEventListener('error', (err) => {
+        clearTimeout(t);
+        reject(err);
+      });
+    });
+
+    let msgId = 1;
+    const pending = new Map<number, { resolve: (v: any) => void; reject: (e: any) => void }>();
+
+    ws.addEventListener('message', (ev: any) => {
+      try {
+        const msg = JSON.parse(typeof ev.data === 'string' ? ev.data : ev.data.toString());
+        if (msg.id && pending.has(msg.id)) {
+          const handler = pending.get(msg.id)!;
+          pending.delete(msg.id);
+          if (msg.error) handler.reject(new Error(msg.error.message || 'CDP error'));
+          else handler.resolve(msg.result);
+        }
+      } catch {
+        // ignore
+      }
+    });
+
+    const sendCdp = (method: string, params: Record<string, any> = {}, timeoutMs = 15000): Promise<any> => {
+      return new Promise((resolve, reject) => {
+        const id = msgId++;
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`CDP timeout: ${method}`));
+        }, timeoutMs);
+        pending.set(id, {
+          resolve: (v) => {
+            clearTimeout(timer);
+            resolve(v);
+          },
+          reject: (e) => {
+            clearTimeout(timer);
+            reject(e);
+          },
+        });
+        ws!.send(JSON.stringify({ id, method, params }));
+      });
+    };
+
+    await sendCdp('Page.enable');
+    await sendCdp('Runtime.enable');
+    await sendCdp('Emulation.setDeviceMetricsOverride', {
+      width: 1440,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+
+    // 3. Navigate to target URL
+    await sendCdp('Page.navigate', { url: targetUrl });
+
+    // 4. Smart Hydration & Splash-Loader Wait Loop (up to 15 seconds)
+    const readinessExpr = `(() => {
+      const text = (document.body && document.body.innerText ? document.body.innerText : '').trim();
+      const lower = text.toLowerCase();
+      const hasLoaderPhrase =
+        text.length < 480 &&
+        /(booting|loading\\.{2,3}|initializing|starting engine|please wait|just a moment)/i.test(lower);
+      const headingsCount = document.querySelectorAll('h1, h2').length;
+      const ready = document.readyState === 'complete' && !hasLoaderPhrase && (text.length >= 260 || headingsCount >= 1);
+      return { ready, textLen: text.length, headingsCount, hasLoaderPhrase, readyState: document.readyState };
+    })()`;
+
+    let stableHits = 0;
+    let lastTextLen = 0;
+    const waitDeadline = Date.now() + 15000;
+
+    while (Date.now() < waitDeadline) {
+      await sleep(500);
+      try {
+        const evalRes = await sendCdp('Runtime.evaluate', {
+          expression: readinessExpr,
+          returnByValue: true,
+        });
+        const val = evalRes?.result?.value;
+        if (val?.ready) {
+          if (Math.abs(val.textLen - lastTextLen) < 25) {
+            stableHits += 1;
+          } else {
+            stableHits = 0;
+          }
+          lastTextLen = val.textLen;
+          if (stableHits >= 2) break; // DOM settled cleanly for ~1s!
+        }
+      } catch {
+        // still navigating
+      }
+    }
+
+    // Extra settle delay for web fonts & fade-in CSS animations
+    await sleep(900);
+
+    // 5. Extract LIVE rendered DOM text, headings, fonts & button accent colors
+    const domExtractExpr = `(() => {
+      const rgbToHex = (rgbStr) => {
+        const m = (rgbStr || '').match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)/i);
+        if (!m) return null;
+        if (m[4] !== undefined && parseFloat(m[4]) < 0.25) return null;
+        const r = parseInt(m[1], 10), g = parseInt(m[2], 10), b = parseInt(m[3], 10);
+        // Skip pure white/black/grays when collecting accents
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        if (max - min < 28) return null;
+        return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+      };
+
+      const headings = Array.from(document.querySelectorAll('h1, h2'))
+        .map(el => (el.innerText || '').replace(/\\s+/g, ' ').trim())
+        .filter(t => t.length >= 4 && t.length <= 160)
+        .slice(0, 6);
+
+      const fonts = [];
+      const ignoreFonts = new Set(['sans-serif', 'serif', 'monospace', 'system-ui', 'ui-sans-serif', 'arial', 'helvetica', '-apple-system', 'blinkmacsystemfont', 'segoe ui']);
+      for (const sel of ['h1', 'h2', 'body', 'button']) {
+        const el = document.querySelector(sel);
+        if (!el) continue;
+        const ff = getComputedStyle(el).fontFamily || '';
+        for (const part of ff.split(',')) {
+          const clean = part.replace(/['"]/g, '').trim();
+          if (clean && !ignoreFonts.has(clean.toLowerCase()) && !fonts.includes(clean)) {
+            fonts.push(clean);
+          }
+          if (fonts.length >= 3) break;
+        }
+      }
+
+      const accents = [];
+      const els = document.querySelectorAll('a, button, [class*="btn"], [class*="primary"], [class*="accent"], header *');
+      for (const el of Array.from(els).slice(0, 120)) {
+        const cs = getComputedStyle(el);
+        for (const prop of [cs.backgroundColor, cs.color, cs.borderColor]) {
+          const hx = rgbToHex(prop);
+          if (hx && !accents.includes(hx)) accents.push(hx);
+          if (accents.length >= 6) break;
+        }
+        if (accents.length >= 6) break;
+      }
+
+      const iconEl = document.querySelector('link[rel*="apple-touch-icon"], link[rel*="icon"]');
+      const faviconUrl = iconEl ? iconEl.href : '';
+
+      return {
+        title: document.title || '',
+        headings,
+        bodyExcerpt: ((document.body && document.body.innerText) || '').replace(/\\s+/g, ' ').trim().slice(0, 1500),
+        fonts,
+        accents,
+        faviconUrl
+      };
+    })()`;
+
+    let renderedTitle = '';
+    let renderedHeadings: string[] = [];
+    let renderedBodyExcerpt = '';
+    let computedFonts: string[] = [];
+    let computedAccentColors: string[] = [];
+    let faviconUrl: string | undefined;
+
+    try {
+      const domRes = await sendCdp('Runtime.evaluate', {
+        expression: domExtractExpr,
+        returnByValue: true,
+      });
+      const v = domRes?.result?.value;
+      if (v) {
+        renderedTitle = v.title || '';
+        renderedHeadings = Array.isArray(v.headings) ? v.headings : [];
+        renderedBodyExcerpt = v.bodyExcerpt || '';
+        computedFonts = Array.isArray(v.fonts) ? v.fonts : [];
+        computedAccentColors = Array.isArray(v.accents) ? v.accents : [];
+        if (v.faviconUrl) faviconUrl = v.faviconUrl;
+      }
+    } catch {
+      // keep defaults
+    }
+
+    // 6. Capture Crisp Desktop (1440x900) Screenshot
+    let desktopOk = false;
+    try {
+      const deskCap = await sendCdp('Page.captureScreenshot', { format: 'png' });
+      if (deskCap?.data) {
+        fs.writeFileSync(desktopOutFile, Buffer.from(deskCap.data, 'base64'));
+        desktopOk = fs.statSync(desktopOutFile).size > 2000;
+      }
+    } catch {
+      desktopOk = false;
+    }
+
+    // 7. Resize to Mobile (430x932), let responsive layout reflow, & capture Mobile Screenshot
+    let mobileOk = false;
+    try {
+      await sendCdp('Emulation.setDeviceMetricsOverride', {
+        width: 430,
+        height: 932,
+        deviceScaleFactor: 1,
+        mobile: true,
+      });
+      await sleep(750);
+      const mobCap = await sendCdp('Page.captureScreenshot', { format: 'png' });
+      if (mobCap?.data) {
+        fs.writeFileSync(mobileOutFile, Buffer.from(mobCap.data, 'base64'));
+        mobileOk = fs.statSync(mobileOutFile).size > 2000;
+      }
+    } catch {
+      mobileOk = false;
+    }
+
+    return {
+      desktopOk,
+      mobileOk,
+      renderedTitle,
+      renderedHeadings,
+      renderedBodyExcerpt,
+      computedFonts,
+      computedAccentColors,
+      faviconUrl,
+    };
+  } finally {
+    try {
+      ws?.close();
+    } catch {}
+    try {
+      proc.kill('SIGKILL');
+    } catch {}
+    // Best-effort cleanup of temp Chrome profile
+    setTimeout(() => {
+      try {
+        fs.rmSync(userDataDir, { recursive: true, force: true });
+      } catch {}
+    }, 1000);
   }
 }
 
@@ -106,15 +406,25 @@ interface ExtractedPalette {
   swatches: string[];
 }
 
+function getContrastText(hex: string): string {
+  const clean = hex.replace('#', '');
+  if (clean.length !== 6) return '#FFFFFF';
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 165 ? '#0A0A0C' : '#FFFFFF';
+}
+
 async function extractPaletteFromPng(pngPath: string): Promise<ExtractedPalette | null> {
   const pyScript = `
 import sys, json, colorsys
 from PIL import Image
 
 img = Image.open(sys.argv[1]).convert('RGB')
-img.thumbnail((220, 220))
-quant = img.quantize(colors=14, method=Image.Quantize.MEDIANCUT).convert('RGB')
-counts = quant.getcolors(220 * 220) or []
+img.thumbnail((240, 240))
+quant = img.quantize(colors=16, method=Image.Quantize.MEDIANCUT).convert('RGB')
+counts = quant.getcolors(240 * 240) or []
 counts.sort(key=lambda x: x[0], reverse=True)
 
 def to_hex(rgb):
@@ -131,21 +441,20 @@ def dist(a, b):
 bg_rgb = counts[0][1] if counts else (10, 10, 12)
 distinct = []
 for cnt, rgb in counts:
-    if all(dist(rgb, d[1]) > 38 for d in distinct):
+    if all(dist(rgb, d[1]) > 35 for d in distinct):
         distinct.append((cnt, rgb))
 
 accents = []
 for cnt, rgb in distinct:
     s, l = sat_lum(rgb)
     if s > 0.28 and 0.14 < l < 0.85:
-        accents.append((cnt * (0.4 + s * 2.0), rgb))
+        accents.append((cnt * (0.4 + s * 2.2), rgb))
 
 accents.sort(key=lambda x: x[0], reverse=True)
 
 primary_rgb = accents[0][1] if accents else (distinct[1][1] if len(distinct) > 1 else (232, 25, 44))
 secondary_rgb = accents[1][1] if len(accents) > 1 else (distinct[2][1] if len(distinct) > 2 else (6, 182, 212))
 
-# Luminance check for readable text on primary
 pr, pg, pb = primary_rgb
 yiq = (pr * 299 + pg * 587 + pb * 114) / 1000
 text_on_primary = '#0A0A0C' if yiq >= 165 else '#FFFFFF'
@@ -173,67 +482,6 @@ print(json.dumps({
   } catch (err) {
     console.warn('[brand-scan] Palette extraction fallback:', err);
     return null;
-  }
-}
-
-async function inspectHtmlBrandSignals(parsedUrl: URL): Promise<{
-  themeColor?: string;
-  faviconUrl?: string;
-  fonts: string[];
-}> {
-  try {
-    const res = await fetch(parsedUrl.toString(), {
-      redirect: 'follow',
-      signal: AbortSignal.timeout(7000),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; ADNETIKS-BrandScanner/1.0)',
-      },
-    });
-    if (!res.ok) return { fonts: [] };
-    const html = (await res.text()).slice(0, 250_000);
-
-    // Theme color meta
-    const tcMatch =
-      html.match(/<meta[^>]*name=["']theme-color["'][^>]*content=["'](#[0-9a-fA-F]{3,6})["']/i) ||
-      html.match(/<meta[^>]*content=["'](#[0-9a-fA-F]{3,6})["'][^>]*name=["']theme-color["']/i);
-    const themeColor = tcMatch ? tcMatch[1].toUpperCase() : undefined;
-
-    // Favicon / apple-touch-icon
-    const iconMatch = html.match(
-      /<link[^>]*rel=["'][^"']*(?:apple-touch-icon|icon)[^"']*["'][^>]*href=["']([^"']+)["']/i
-    );
-    let faviconUrl: string | undefined;
-    if (iconMatch) {
-      const rawHref = iconMatch[1];
-      if (rawHref.startsWith('http')) faviconUrl = rawHref;
-      else if (rawHref.startsWith('//')) faviconUrl = `${parsedUrl.protocol}${rawHref}`;
-      else faviconUrl = new URL(rawHref, parsedUrl.origin).toString();
-    } else {
-      faviconUrl = `${parsedUrl.origin}/favicon.ico`;
-    }
-
-    // Google Fonts / CSS font-family detection
-    const fonts: string[] = [];
-    const gfRegex = /fonts\.googleapis\.com\/css2?\?[^"']*family=([^"'&]+)/gi;
-    let gfm: RegExpExecArray | null;
-    while ((gfm = gfRegex.exec(html)) !== null && fonts.length < 4) {
-      const fam = decodeURIComponent(gfm[1]).split(':')[0].replace(/\+/g, ' ').trim();
-      if (fam && !fonts.includes(fam)) fonts.push(fam);
-    }
-
-    if (fonts.length === 0) {
-      const ffRegex = /font-family\s*:\s*['"]?([A-Za-z][A-Za-z0-9\s-]{2,28})['"]?/gi;
-      let ffm: RegExpExecArray | null;
-      const ignore = new Set(['inherit', 'sans-serif', 'serif', 'monospace', 'system-ui', 'ui-sans-serif', 'Arial', 'Helvetica']);
-      while ((ffm = ffRegex.exec(html)) !== null && fonts.length < 3) {
-        const fam = ffm[1].trim();
-        if (fam && !ignore.has(fam) && !fonts.includes(fam)) fonts.push(fam);
-      }
-    }
-
-    return { themeColor, faviconUrl, fonts };
-  } catch {
-    return { fonts: [] };
   }
 }
 
@@ -297,51 +545,77 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
 
   const browserPath = findBrowserExecutable();
 
-  // Run HTML scrape + HTML brand signal inspection + real headless screenshots in parallel!
-  const [scraped, htmlSignals, desktopOk, mobileOk] = await Promise.all([
+  // Run HTML scrape + Smart CDP Live Browser Render (waits for SPA boot/splash loaders!) in parallel
+  const [scraped, cdp] = await Promise.all([
     scrapeUrlContext(parsed.toString()),
-    inspectHtmlBrandSignals(parsed),
     browserPath
-      ? captureViewportScreenshot(browserPath, parsed.toString(), desktopPath, 1440, 900)
-      : Promise.resolve(false),
-    browserPath
-      ? captureViewportScreenshot(browserPath, parsed.toString(), mobilePath, 430, 932)
-      : Promise.resolve(false),
+      ? captureViaSmartCdp(browserPath, parsed.toString(), desktopPath, mobilePath).catch((err) => {
+          console.warn('[brand-scan] Smart CDP failed:', err);
+          return {
+            desktopOk: false,
+            mobileOk: false,
+            renderedHeadings: [],
+            computedFonts: [],
+            computedAccentColors: [],
+          } as CdpCaptureResult;
+        })
+      : Promise.resolve({
+          desktopOk: false,
+          mobileOk: false,
+          renderedHeadings: [],
+          computedFonts: [],
+          computedAccentColors: [],
+        } as CdpCaptureResult),
   ]);
 
-  // Extract authentic visual color palette from the real rendered Desktop screenshot
+  // Extract visual palette from the real hydrated Desktop screenshot, enriched with computed DOM button accent colors!
   let palette: ExtractedPalette = {
-    primary: htmlSignals.themeColor || '#E8192C',
-    secondary: '#06B6D4',
+    primary: cdp.computedAccentColors[0] || '#E8192C',
+    secondary: cdp.computedAccentColors[1] || '#06B6D4',
     background: '#0A0A0C',
-    textOnPrimary: '#FFFFFF',
-    swatches: [htmlSignals.themeColor || '#E8192C', '#06B6D4', '#0A0A0C', '#18181F', '#F8FAFC'],
+    textOnPrimary: getContrastText(cdp.computedAccentColors[0] || '#E8192C'),
+    swatches:
+      cdp.computedAccentColors.length > 0
+        ? [...cdp.computedAccentColors, '#0A0A0C', '#FFFFFF'].slice(0, 5)
+        : ['#E8192C', '#06B6D4', '#0A0A0C', '#18181F', '#F8FAFC'],
   };
 
-  if (desktopOk) {
+  if (cdp.desktopOk) {
     const extracted = await extractPaletteFromPng(desktopPath);
     if (extracted) {
-      palette = extracted;
-      if (htmlSignals.themeColor && !palette.swatches.includes(htmlSignals.themeColor)) {
-        palette.swatches = [htmlSignals.themeColor, ...palette.swatches].slice(0, 5);
+      // Prefer real CSS button/CTA accent color from live DOM as primary when detected!
+      const primary = cdp.computedAccentColors[0] || extracted.primary;
+      const secondary = cdp.computedAccentColors[1] || extracted.secondary;
+      const mergedSwatches: string[] = [];
+      for (const hx of [primary, secondary, ...cdp.computedAccentColors, ...extracted.swatches]) {
+        if (hx && !mergedSwatches.includes(hx)) mergedSwatches.push(hx);
+        if (mergedSwatches.length >= 5) break;
       }
+      palette = {
+        primary,
+        secondary,
+        background: extracted.background,
+        textOnPrimary: getContrastText(primary),
+        swatches: mergedSwatches,
+      };
     }
   }
 
-  // Derive crisp brand name from page title or domain
-  const rawBrand = (scraped.title || domain)
-    .split(/[|\-–—:·]/)[0]
-    .trim();
+  // Merge live hydrated headings & title (works on client-side React/Next SPAs!)
+  const bestTitle = cdp.renderedTitle || scraped.title || domain;
+  const bestHeadings = cdp.renderedHeadings.length > 0 ? cdp.renderedHeadings : scraped.headings;
+  const bestDescription = scraped.description || bestHeadings[0] || (cdp.renderedBodyExcerpt || '').slice(0, 180);
+
+  const rawBrand = bestTitle.split(/[|\-–—:·]/)[0].trim();
   const brandName =
     rawBrand.length >= 2 && rawBrand.length <= 36
       ? rawBrand
       : domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
 
-  // Run multimodal vision pass on the captured desktop screenshot if available
-  let visualVibe = `Modern ${scraped.siteType} brand aesthetic anchored by ${palette.primary} & ${palette.secondary}`;
-  let suggestedHook = scraped.headings[0] || scraped.description || `Discover ${brandName} — built to stand out.`;
+  let visualVibe = `Live rendered ${scraped.siteType} experience anchored by ${palette.primary} & ${palette.secondary}`;
+  let suggestedHook = bestHeadings[0] || bestDescription || `Discover ${brandName} — built to stand out.`;
 
-  if (desktopOk) {
+  if (cdp.desktopOk) {
     try {
       const b64 = fs.readFileSync(desktopPath).toString('base64');
       const vision = await analyzeImageVisual(`data:image/png;base64,${b64}`, brandName, brandName);
@@ -350,32 +624,41 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
         if (vision.suggestedHook) suggestedHook = vision.suggestedHook;
       }
     } catch {
-      // Keep extracted vibe
+      // keep extracted vibe
     }
   }
+
+  const fonts = cdp.computedFonts.length > 0 ? cdp.computedFonts : ['Plus Jakarta Sans', 'Inter'];
 
   return {
     ok: true,
     url: parsed.toString(),
     domain,
     brandName,
-    tagline: scraped.description || scraped.headings[0] || `${brandName} Official Experience`,
+    tagline: bestDescription || `${brandName} Official Experience`,
     siteType: scraped.siteType || 'web',
-    desktopScreenshotUrl: desktopOk ? `/api/media/${desktopFilename}` : scraped.ogImage,
-    mobileScreenshotUrl: mobileOk ? `/api/media/${mobileFilename}` : desktopOk ? `/api/media/${desktopFilename}` : scraped.ogImage,
+    desktopScreenshotUrl: cdp.desktopOk ? `/api/media/${desktopFilename}` : scraped.ogImage,
+    mobileScreenshotUrl: cdp.mobileOk
+      ? `/api/media/${mobileFilename}`
+      : cdp.desktopOk
+      ? `/api/media/${desktopFilename}`
+      : scraped.ogImage,
     ogImageUrl: scraped.ogImage,
-    faviconUrl: htmlSignals.faviconUrl,
+    faviconUrl: cdp.faviconUrl || `${parsed.origin}/favicon.ico`,
     palette,
-    fonts: htmlSignals.fonts.length > 0 ? htmlSignals.fonts : ['Plus Jakarta Sans', 'Inter'],
-    headings: scraped.headings,
-    description: scraped.description,
+    fonts,
+    headings: bestHeadings,
+    description: bestDescription,
     visualVibe,
     suggestedHook,
     summaryText: [
-      `Brand Scanned: ${brandName} (${parsed.toString()})`,
+      `Brand Scanned (Live Hydrated SPA): ${brandName} (${parsed.toString()})`,
       `Brand Colors: Primary ${palette.primary}, Secondary ${palette.secondary}, Background ${palette.background}`,
-      `Visual Vibe: ${visualVibe}`,
-      scraped.summaryText,
-    ].join('\n'),
+      `Typography: ${fonts.join(', ')}`,
+      bestHeadings.length > 0 ? `Live Headings: ${bestHeadings.join(' | ')}` : '',
+      cdp.renderedBodyExcerpt ? `Live Rendered Copy: ${cdp.renderedBodyExcerpt.slice(0, 900)}` : scraped.summaryText,
+    ]
+      .filter(Boolean)
+      .join('\n'),
   };
 }
