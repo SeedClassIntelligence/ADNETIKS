@@ -17,37 +17,37 @@ export interface LLMConfig {
 }
 
 const DEFAULT_MODELS: Record<LLMProvider, string> = {
-  gemini: 'gemini-3.8-flash',
+  gemini: 'gemini-2.0-flash',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-20241022',
   openai_compatible: 'gpt-4o-mini',
 };
 
+let runtimeConfigOverride: Partial<LLMConfig> = {};
+
+export function setRuntimeLLMConfig(override: Partial<LLMConfig>) {
+  runtimeConfigOverride = { ...runtimeConfigOverride, ...override };
+}
+
 /**
- * Reads LLM configuration from environment variables.
- *
- * Priority order:
- *   ADNETIKS_LLM_PROVIDER  (default: 'gemini')
- *   ADNETIKS_LLM_MODEL     (default: provider-specific default)
- *   GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY
- *   ADNETIKS_API_BASE_URL  (custom base URL for openai_compatible endpoints)
+ * Reads LLM configuration from environment variables merged with any runtime overrides.
  */
 export function getLLMConfig(): LLMConfig {
-  const provider = (process.env.ADNETIKS_LLM_PROVIDER || 'gemini') as LLMProvider;
-  const model = process.env.ADNETIKS_LLM_MODEL || DEFAULT_MODELS[provider] || DEFAULT_MODELS.gemini;
+  const provider = (runtimeConfigOverride.provider || process.env.ADNETIKS_LLM_PROVIDER || 'gemini') as LLMProvider;
+  const model = runtimeConfigOverride.model || process.env.ADNETIKS_LLM_MODEL || DEFAULT_MODELS[provider] || DEFAULT_MODELS.gemini;
 
   const apiKeyMap: Record<LLMProvider, string | undefined> = {
-    gemini: process.env.GEMINI_API_KEY,
-    openai: process.env.OPENAI_API_KEY,
-    anthropic: process.env.ANTHROPIC_API_KEY,
-    openai_compatible: process.env.OPENAI_API_KEY || process.env.ADNETIKS_API_KEY,
+    gemini: runtimeConfigOverride.apiKey || process.env.GEMINI_API_KEY,
+    openai: runtimeConfigOverride.apiKey || process.env.OPENAI_API_KEY,
+    anthropic: runtimeConfigOverride.apiKey || process.env.ANTHROPIC_API_KEY,
+    openai_compatible: runtimeConfigOverride.apiKey || process.env.OPENAI_API_KEY || process.env.ADNETIKS_API_KEY,
   };
 
   return {
     provider,
     model,
     apiKey: apiKeyMap[provider],
-    baseUrl: process.env.ADNETIKS_API_BASE_URL,
+    baseUrl: runtimeConfigOverride.baseUrl || process.env.ADNETIKS_API_BASE_URL,
   };
 }
 

@@ -407,3 +407,27 @@ export interface HumanInterventionFactor {
   description: string;
   recommendedAction: string;
 }
+
+export interface AIVideoBeat {
+  timing: string;
+  title: string;
+  spokenScript: string;
+  visualDirection: string;
+  kineticOverlay: string;
+  brollPrompt?: string;
+}
+
+export interface CampaignVideoAsset {
+  id: string;
+  title: string;
+  hookAngle?: string;
+  source: 'ai_generated' | 'recorded' | 'uploaded';
+  aspectRatio: '9:16' | '16:9' | '1:1';
+  videoUrl?: string;
+  voiceTone?: string;
+  backgroundTrack?: string;
+  beats: AIVideoBeat[];
+  audioWaveform?: number[];
+  videoMotionFrames?: { bgGradient: string; accentColor: string }[];
+  attachedAt: string;
+}

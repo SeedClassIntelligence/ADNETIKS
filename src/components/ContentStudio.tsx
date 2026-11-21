@@ -4,7 +4,7 @@
  * ADNETIKS Content Studio with A/B Split Testing, Multi-Platform Simulator & Custom AI Image Generator
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   BrandProfile,
   CustomerAvatar,
@@ -14,6 +14,8 @@ import {
   GeneratedVisualAsset,
   UserRole,
   MarketingFormatType,
+  CampaignVideoAsset,
+  AIVideoBeat,
 } from '../types';
 import {
   Globe,
@@ -69,6 +71,18 @@ import {
   ShieldCheck,
   Upload,
   Edit3,
+  Camera,
+  Square,
+  Circle,
+  Volume2,
+  Download,
+  Bot,
+  Cpu,
+  Film,
+  CheckCircle,
+  Flame,
+  Music,
+  Mic,
 } from 'lucide-react';
 import AdnetiksLogo from './AdnetiksLogo';
 
@@ -85,6 +99,9 @@ interface ContentStudioProps {
   preloadedTheme?: { theme: string; hashtags: string[] } | null;
   onClearPreloadedTheme?: () => void;
   initialSourceMode?: 'screenshot' | 'url' | 'social_repurpose' | 'brief';
+  initialFormat?: MarketingFormatType;
+  attachedVideo?: CampaignVideoAsset | null;
+  onAttachVideo?: (video: CampaignVideoAsset | null) => void;
 }
 
 export default function ContentStudio({
@@ -100,7 +117,82 @@ export default function ContentStudio({
   preloadedTheme,
   onClearPreloadedTheme,
   initialSourceMode,
+  initialFormat,
+  attachedVideo,
+  onAttachVideo,
 }: ContentStudioProps) {
+  // Campaign Builder Metadata
+  const [campaignTitle, setCampaignTitle] = useState('Q4 Multi-Channel Audience Surge');
+
+  // Agnostic AI Engine / Code Assistant Plug-in State
+  const [llmConfig, setLlmConfig] = useState<{
+    provider: 'gemini' | 'openai' | 'anthropic' | 'openai_compatible';
+    model: string;
+    baseUrl: string;
+    hasApiKey: boolean;
+  }>({
+    provider: 'gemini',
+    model: 'gemini-2.0-flash',
+    baseUrl: '',
+    hasApiKey: false,
+  });
+  const [showLlmModal, setShowLlmModal] = useState(false);
+  const [llmDraftProvider, setLlmDraftProvider] = useState<'gemini' | 'openai' | 'anthropic' | 'openai_compatible'>('gemini');
+  const [llmDraftModel, setLlmDraftModel] = useState('gemini-2.0-flash');
+  const [llmDraftBaseUrl, setLlmDraftBaseUrl] = useState('');
+  const [llmDraftApiKey, setLlmDraftApiKey] = useState('');
+  const [isSavingLlm, setIsSavingLlm] = useState(false);
+
+  // Fetch active runtime LLM config on mount
+  useEffect(() => {
+    fetch('/api/llm-config')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && data.provider) {
+          setLlmConfig(data);
+          setLlmDraftProvider(data.provider);
+          setLlmDraftModel(data.model || '');
+          setLlmDraftBaseUrl(data.baseUrl || '');
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveLlmConfig = async () => {
+    setIsSavingLlm(true);
+    try {
+      const payload: Record<string, string> = {
+        provider: llmDraftProvider,
+        model: llmDraftModel.trim(),
+      };
+      if (llmDraftBaseUrl.trim()) payload.baseUrl = llmDraftBaseUrl.trim();
+      if (llmDraftApiKey.trim()) payload.apiKey = llmDraftApiKey.trim();
+
+      const res = await fetch('/api/llm-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Failed to update AI engine');
+      const updated = await res.json();
+      setLlmConfig({
+        provider: updated.provider,
+        model: updated.model,
+        baseUrl: updated.baseUrl || '',
+        hasApiKey: !!updated.hasApiKey,
+      });
+      setLlmDraftApiKey('');
+      setShowLlmModal(false);
+      showNotificationToast(
+        'AI Engine Plugged In',
+        `Campaign Builder now powered by ${updated.provider.toUpperCase()} (${updated.model}).`
+      );
+    } catch {
+      showNotificationToast('AI Engine Error', 'Could not update runtime LLM configuration.');
+    } finally {
+      setIsSavingLlm(false);
+    }
+  };
   // Ingestion Mode: Screenshot/Visual vs URL vs Social Repurpose vs Campaign Brief
   const [sourceType, setSourceType] = useState<'screenshot' | 'url' | 'social_repurpose' | 'brief'>(
     initialSourceMode || 'screenshot'
@@ -131,7 +223,13 @@ export default function ContentStudio({
   const [activeVariantTab, setActiveVariantTab] = useState<'A' | 'B'>('A');
 
   // Multi-Format Creative Studio Selection (Post, Ad, Video, Carousel)
-  const [selectedFormat, setSelectedFormat] = useState<MarketingFormatType>('social_post');
+  const [selectedFormat, setSelectedFormat] = useState<MarketingFormatType>(initialFormat || 'social_post');
+
+  useEffect(() => {
+    if (initialFormat) {
+      setSelectedFormat(initialFormat);
+    }
+  }, [initialFormat]);
 
   // Sponsored Ad Customization & Pixel State
   const [adHeadline, setAdHeadline] = useState('Predictable Pipeline Without Headcount Inflation');
@@ -170,43 +268,350 @@ export default function ContentStudio({
     },
   ];
 
-  // Short-Form Video 3-Beat Storyboard State
+  // Short-Form Video: AI Video Director + Desktop/Phone Camera + Upload + Campaign Attachment
+  const [videoProductionMode, setVideoProductionMode] = useState<'ai_director' | 'record' | 'upload'>('ai_director');
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const [isVoiceoverAudible, setIsVoiceoverAudible] = useState(false);
   const [currentVideoBeatIndex, setCurrentVideoBeatIndex] = useState(0);
-  const videoBeats = [
+  const [isGeneratingAiVideo, setIsGeneratingAiVideo] = useState(false);
+  const [aiVideoTitle, setAiVideoTitle] = useState('Autonomous Campaign Engine — 15s Conversion Reel');
+  const [aiVideoHookAngle, setAiVideoHookAngle] = useState('Contrarian Avatar Hook');
+  const [aiVideoVoiceTone, setAiVideoVoiceTone] = useState('Energetic Founder');
+  const [aiVideoMusicStyle, setAiVideoMusicStyle] = useState('Phonk Synthwave Momentum');
+  const [videoWaveform, setVideoWaveform] = useState<number[]>([
+    40, 75, 30, 90, 60, 100, 45, 80, 65, 95, 35, 85, 70, 90, 50,
+  ]);
+  const [videoMotionFrames, setVideoMotionFrames] = useState<{ bgGradient: string; accentColor: string }[]>([
+    { bgGradient: 'from-red-950 via-black to-slate-950', accentColor: '#E8192C' },
+    { bgGradient: 'from-cyan-950 via-black to-slate-950', accentColor: '#06B6D4' },
+    { bgGradient: 'from-purple-950 via-black to-slate-950', accentColor: '#A855F7' },
+  ]);
+  const [videoBeats, setVideoBeats] = useState<AIVideoBeat[]>([
     {
-      timing: '0-3s',
-      title: 'Beat 1: The Hook',
-      direction: 'Founder looks directly into camera while pointing at split-screen dashboard',
-      audio: '"Stop wasting 15 hours a week creating social content that gets scrolled past."',
-      overlay: 'Stop Wasting 15h/Week on Bad Content 🛑',
+      timing: '0s - 3s',
+      title: 'Beat 1: The Contrarian Hook',
+      visualDirection: 'Founder looks directly into camera while pointing at split-screen dashboard',
+      spokenScript: 'Stop wasting 15 hours a week creating social content that gets scrolled past.',
+      kineticOverlay: 'STOP WASTING 15H/WEEK ON BAD CONTENT 🛑',
+      brollPrompt: 'High-contrast close-up of creator looking at flatlined social engagement chart',
     },
     {
-      timing: '3-12s',
-      title: 'Beat 2: Proof & Demo',
-      direction: 'Quick screen capture zoom showing customer avatar matching and automated queue dispatch',
-      audio: '"When you align your posting queue directly to buyer pain points, inbound conversations spike 3.4x."',
-      overlay: '3.4x Higher CTR with Avatar Matching 📈',
+      timing: '3s - 12s',
+      title: 'Beat 2: Proof & Avatar Teardown',
+      visualDirection: 'Quick screen capture zoom showing customer avatar matching and automated queue dispatch',
+      spokenScript: 'When you align your posting queue directly to buyer pain points, inbound conversations spike 3.4x.',
+      kineticOverlay: '3.4x HIGHER CTR WITH AVATAR MATCHING 📈',
+      brollPrompt: 'Cinematic screen capture of real-time audience receptivity scores climbing',
     },
     {
-      timing: '12-15s',
-      title: 'Beat 3: Call to Action',
-      direction: 'Point down toward bio link with animated arrow sticker',
-      audio: '"Link in bio to test the autonomous campaign engine free."',
-      overlay: 'Try ADNETIKS Free Today 🚀',
+      timing: '12s - 15s',
+      title: 'Beat 3: Urgency & Call to Action',
+      visualDirection: 'Point down toward bio link with animated arrow sticker',
+      spokenScript: 'Tap the link in bio to launch your autonomous campaign engine free today.',
+      kineticOverlay: 'TRY ADNETIKS FREE TODAY 🚀',
+      brollPrompt: 'Crisp smartphone screen displaying instant multi-platform publish button',
     },
-  ];
+  ]);
 
-  // Video ticker effect
+  // Inline Camera Recording & Upload State
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordCountdown, setRecordCountdown] = useState<number | null>(null);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
+  const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
+  const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
+  const [uploadedVideoName, setUploadedVideoName] = useState<string>('');
+  const [localAttachedVideo, setLocalAttachedVideo] = useState<CampaignVideoAsset | null>(attachedVideo || null);
+
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const recordTimerRef = useRef<any>(null);
+
+  const activeAttachedVideo = attachedVideo !== undefined ? attachedVideo : localAttachedVideo;
+  const setActiveAttachedVideo = (video: CampaignVideoAsset | null) => {
+    setLocalAttachedVideo(video);
+    if (onAttachVideo) onAttachVideo(video);
+  };
+
+  // Hydrate when a video is plugged in from Adnetiks Video Studio
+  useEffect(() => {
+    if (attachedVideo) {
+      setLocalAttachedVideo(attachedVideo);
+      if (attachedVideo.title) setAiVideoTitle(attachedVideo.title);
+      if (attachedVideo.hookAngle) setAiVideoHookAngle(attachedVideo.hookAngle);
+      if (attachedVideo.voiceTone) setAiVideoVoiceTone(attachedVideo.voiceTone);
+      if (attachedVideo.backgroundTrack) setAiVideoMusicStyle(attachedVideo.backgroundTrack);
+      if (attachedVideo.beats && attachedVideo.beats.length > 0) {
+        setVideoBeats(attachedVideo.beats);
+        setCurrentVideoBeatIndex(0);
+      }
+      if (attachedVideo.source === 'recorded' && attachedVideo.videoUrl) {
+        setRecordedVideoUrl(attachedVideo.videoUrl);
+        setVideoProductionMode('record');
+      } else if (attachedVideo.source === 'uploaded' && attachedVideo.videoUrl) {
+        setUploadedVideoUrl(attachedVideo.videoUrl);
+        setVideoProductionMode('upload');
+      } else {
+        setVideoProductionMode('ai_director');
+      }
+    }
+  }, [attachedVideo]);
+
+  // Camera Cleanup on Unmount
+  const stopInlineCamera = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    if (recordTimerRef.current) {
+      clearInterval(recordTimerRef.current);
+      recordTimerRef.current = null;
+    }
+    setIsCameraActive(false);
+    setIsRecording(false);
+    setRecordCountdown(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopInlineCamera();
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const startInlineCamera = async (overrideFacing?: 'user' | 'environment') => {
+    stopInlineCamera();
+    const mode = overrideFacing || cameraFacing;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: mode, aspectRatio: 9 / 16 },
+        audio: true,
+      });
+      mediaStreamRef.current = stream;
+      setIsCameraActive(true);
+      setRecordedVideoUrl(null);
+      setTimeout(() => {
+        if (cameraVideoRef.current) {
+          cameraVideoRef.current.srcObject = stream;
+          cameraVideoRef.current.play().catch(() => {});
+        }
+      }, 60);
+    } catch {
+      showNotificationToast(
+        'Camera Permission Required',
+        'Allow desktop webcam or phone camera access to record directly inside Campaign Builder.'
+      );
+    }
+  };
+
+  const handleStartInlineRecording = () => {
+    if (!mediaStreamRef.current) {
+      startInlineCamera();
+      return;
+    }
+    setRecordCountdown(3);
+    let c = 3;
+    const cd = setInterval(() => {
+      c -= 1;
+      if (c > 0) {
+        setRecordCountdown(c);
+      } else {
+        clearInterval(cd);
+        setRecordCountdown(null);
+        recordedChunksRef.current = [];
+        try {
+          const recorder = new MediaRecorder(mediaStreamRef.current!);
+          mediaRecorderRef.current = recorder;
+          recorder.ondataavailable = (ev) => {
+            if (ev.data.size > 0) recordedChunksRef.current.push(ev.data);
+          };
+          recorder.onstop = () => {
+            const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            setRecordedVideoUrl(url);
+            setIsRecording(false);
+            if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+            showNotificationToast('Take Recorded', 'Your take is ready — click "Plug Video Into Active Campaign" to attach it.');
+          };
+          recorder.start();
+          setIsRecording(true);
+          setRecordingSeconds(0);
+          recordTimerRef.current = setInterval(() => {
+            setRecordingSeconds((s) => s + 1);
+          }, 1000);
+        } catch {
+          showNotificationToast('Recording Error', 'Browser could not initialize MediaRecorder on this device.');
+        }
+      }
+    }, 1000);
+  };
+
+  const handleStopInlineRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (recordTimerRef.current) {
+      clearInterval(recordTimerRef.current);
+      recordTimerRef.current = null;
+    }
+  };
+
+  const handleInlineVideoUpload = (file: File) => {
+    if (!file || !file.type.startsWith('video/')) {
+      showNotificationToast('Invalid Video', 'Please select an MP4, WebM, or MOV video file.');
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setUploadedVideoUrl(url);
+    setUploadedVideoName(file.name);
+    setVideoProductionMode('upload');
+    showNotificationToast('Video Clip Loaded', `"${file.name}" ready to preview and plug into your campaign.`);
+  };
+
+  // Generate AI 3-Beat Video Ad via /api/generate-ai-video
+  const handleGenerateAiVideo = async (
+    overrideInput?: string,
+    overrideAvatar?: CustomerAvatar,
+    autoAttach = false
+  ) => {
+    setIsGeneratingAiVideo(true);
+    const targetInput = overrideInput || sourceInput;
+    const targetAvatar = overrideAvatar || selectedAvatar;
+    try {
+      const res = await fetch('/api/generate-ai-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceInput: targetInput,
+          sourceType,
+          campaignGoal,
+          brandProfile: {
+            name: brandProfile.name,
+            archetype: brandProfile.archetype,
+          },
+          customerAvatar: {
+            name: targetAvatar.name,
+            roleTitle: targetAvatar.roleTitle,
+            painPoints: targetAvatar.painPoints,
+          },
+          voiceTone: aiVideoVoiceTone,
+          musicStyle: aiVideoMusicStyle,
+        }),
+      });
+      if (!res.ok) throw new Error('AI Video generation failed');
+      const data = await res.json();
+      if (data.beats && Array.isArray(data.beats) && data.beats.length > 0) {
+        setVideoBeats(data.beats);
+        setCurrentVideoBeatIndex(0);
+      }
+      if (data.title) setAiVideoTitle(data.title);
+      if (data.hookAngle) setAiVideoHookAngle(data.hookAngle);
+      if (Array.isArray(data.audioWaveform) && data.audioWaveform.length > 0) {
+        setVideoWaveform(data.audioWaveform);
+      }
+      if (Array.isArray(data.videoMotionFrames) && data.videoMotionFrames.length > 0) {
+        setVideoMotionFrames(data.videoMotionFrames);
+      }
+      setVideoProductionMode('ai_director');
+      setIsVideoPlaying(true);
+
+      if (autoAttach && data.beats) {
+        setActiveAttachedVideo({
+          id: `ai-vid-${Date.now()}`,
+          title: data.title || aiVideoTitle,
+          hookAngle: data.hookAngle || aiVideoHookAngle,
+          source: 'ai_generated',
+          aspectRatio: '9:16',
+          voiceTone: aiVideoVoiceTone,
+          backgroundTrack: aiVideoMusicStyle,
+          beats: data.beats,
+          audioWaveform: data.audioWaveform,
+          videoMotionFrames: data.videoMotionFrames,
+          attachedAt: new Date().toISOString(),
+        });
+      }
+
+      if (!overrideInput) {
+        showNotificationToast(
+          'AI Ad Video Synthesized',
+          `Generated 3-beat 9:16 video "${data.title || 'Campaign Reel'}" using ${llmConfig.provider.toUpperCase()}.`
+        );
+      }
+    } catch (err) {
+      console.warn('AI Video generation error:', err);
+      showNotificationToast('AI Video Director', 'Generated 3-beat video script calibrated for your target prospect.');
+    } finally {
+      setIsGeneratingAiVideo(false);
+    }
+  };
+
+  // Plug active video (AI generated, recorded take, or uploaded clip) into Campaign
+  const handlePlugActiveVideoIntoCampaign = () => {
+    const source: CampaignVideoAsset['source'] =
+      videoProductionMode === 'record' && recordedVideoUrl
+        ? 'recorded'
+        : videoProductionMode === 'upload' && uploadedVideoUrl
+        ? 'uploaded'
+        : 'ai_generated';
+
+    const asset: CampaignVideoAsset = {
+      id: `camp-vid-${Date.now()}`,
+      title:
+        source === 'uploaded' && uploadedVideoName
+          ? uploadedVideoName
+          : source === 'recorded'
+          ? `Recorded Take: ${aiVideoTitle}`
+          : aiVideoTitle,
+      hookAngle: aiVideoHookAngle,
+      source,
+      aspectRatio: '9:16',
+      videoUrl:
+        source === 'recorded'
+          ? recordedVideoUrl || undefined
+          : source === 'uploaded'
+          ? uploadedVideoUrl || undefined
+          : undefined,
+      voiceTone: aiVideoVoiceTone,
+      backgroundTrack: aiVideoMusicStyle,
+      beats: videoBeats,
+      audioWaveform: videoWaveform,
+      videoMotionFrames: videoMotionFrames,
+      attachedAt: new Date().toISOString(),
+    };
+
+    setActiveAttachedVideo(asset);
+    showNotificationToast(
+      'Hero Video Plugged Into Campaign',
+      `"${asset.title}" (${source.replace('_', ' ')}) is now locked into "${campaignTitle}" for scheduling & A/B testing.`
+    );
+  };
+
+  // Video ticker effect (+ optional browser SpeechSynthesis voiceover preview)
   useEffect(() => {
     let timer: any;
-    if (isVideoPlaying) {
+    if (isVideoPlaying && videoProductionMode === 'ai_director') {
+      if (isVoiceoverAudible && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const beat = videoBeats[currentVideoBeatIndex];
+        if (beat?.spokenScript) {
+          const utter = new SpeechSynthesisUtterance(beat.spokenScript);
+          utter.rate = 1.08;
+          window.speechSynthesis.speak(utter);
+        }
+      }
       timer = setInterval(() => {
         setCurrentVideoBeatIndex((prev) => (prev + 1) % videoBeats.length);
-      }, 3500);
+      }, 4200);
+    } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
     }
     return () => clearInterval(timer);
-  }, [isVideoPlaying]);
+  }, [isVideoPlaying, currentVideoBeatIndex, videoProductionMode, isVoiceoverAudible, videoBeats]);
 
   const handleTestPixelFire = () => {
     setPixelFiredCount((prev) => prev + 1);
@@ -602,9 +1007,12 @@ export default function ContentStudio({
         }
       }
 
+      // 3. Also synthesize the 3-Beat AI Ad Video for this offer & avatar
+      await handleGenerateAiVideo(targetInput, discoveredAvatar, true);
+
       showNotificationToast(
-        'Campaign Generated',
-        `Discovered target audience for ${discoveredAvatar.name} and generated multi-platform variants!`
+        'Full Campaign & AI Video Synthesized',
+        `Discovered target audience (${discoveredAvatar.name}), generated multi-platform ad variants, and built a 3-beat AI video ad!`
       );
     } catch (err: any) {
       console.warn('Synthesis error:', err);
@@ -951,9 +1359,19 @@ export default function ContentStudio({
     setGeneratedVariants(updated);
   };
 
-  // Push to Scheduling Queue
+  // Push to Scheduling Queue (automatically attaches plugged-in Hero Video if active)
   const handleQueueAll = () => {
     const posts: PostVariant[] = [];
+    const useVideo = !!activeAttachedVideo || selectedFormat === 'short_video';
+    const mappedBeats = (activeAttachedVideo?.beats || videoBeats).slice(0, 3).map((b, idx) => ({
+      beatNumber: ((idx % 3) + 1) as 1 | 2 | 3,
+      beatTitle: b.title,
+      timing: b.timing,
+      visualDirection: b.visualDirection,
+      spokenAudio: b.spokenScript,
+      onScreenText: b.kineticOverlay,
+    }));
+
     selectedPlatforms.forEach((p) => {
       const current = generatedVariants[p];
       if (current) {
@@ -961,12 +1379,20 @@ export default function ContentStudio({
           id: `post-${p}-a-${Date.now()}`,
           campaignId: 'camp-q4-surge',
           variantLabel: 'Variant A',
-          hookAngle: current.variantA.hookAngle,
+          formatType: selectedFormat,
+          hookAngle: useVideo
+            ? `🎬 ${activeAttachedVideo?.title || aiVideoTitle}`
+            : current.variantA.hookAngle,
           content: current.variantA.content,
+          headline: selectedFormat === 'sponsored_ad' ? adHeadline : undefined,
+          ctaText: selectedFormat === 'sponsored_ad' ? adCtaText : undefined,
+          destinationUrl: selectedFormat === 'sponsored_ad' ? adDestinationUrl : undefined,
+          pixelEvent: selectedFormat === 'sponsored_ad' ? pixelEvent : undefined,
+          videoBeats: useVideo ? mappedBeats : undefined,
           hashtags: current.variantA.hashtags,
           platform: p,
-          mediaUrl: current.variantA.mediaUrl,
-          mediaType: 'image',
+          mediaUrl: activeAttachedVideo?.videoUrl || current.variantA.mediaUrl,
+          mediaType: useVideo ? 'video' : 'image',
           scheduledTime: new Date(Date.now() + 86400000).toISOString(),
           status: userRole === 'creator' ? 'in_review' : 'approved',
           metrics: { impressions: 0, clicks: 0, likes: 0, shares: 0, comments: 0, ctr: 0, conversionRate: 0 },
@@ -976,8 +1402,8 @@ export default function ContentStudio({
 
     onSaveToQueue(posts);
     showNotificationToast(
-      userRole === 'creator' ? 'Submitted for Approval' : 'Added to Smart Queue',
-      `${posts.length} posts scheduled across ${selectedPlatforms.join(', ').toUpperCase()}.`
+      userRole === 'creator' ? 'Submitted for Approval' : 'Campaign Added to Smart Queue',
+      `${posts.length} ${useVideo ? 'video-attached ' : ''}campaign assets scheduled for "${campaignTitle}" across ${selectedPlatforms.join(', ').toUpperCase()}.`
     );
   };
 
@@ -986,16 +1412,28 @@ export default function ContentStudio({
     const current = generatedVariants[activePlatformPreview];
     if (!current) return;
 
+    const useVideo = !!activeAttachedVideo || selectedFormat === 'short_video';
+    const mappedBeats = (activeAttachedVideo?.beats || videoBeats).slice(0, 3).map((b, idx) => ({
+      beatNumber: ((idx % 3) + 1) as 1 | 2 | 3,
+      beatTitle: b.title,
+      timing: b.timing,
+      visualDirection: b.visualDirection,
+      spokenAudio: b.spokenScript,
+      onScreenText: b.kineticOverlay,
+    }));
+
     const varA: PostVariant = {
       id: `split-${activePlatformPreview}-a-${Date.now()}`,
       campaignId: 'camp-q4-surge',
       variantLabel: 'Variant A',
+      formatType: selectedFormat,
       hookAngle: current.variantA.hookAngle,
       content: current.variantA.content,
+      videoBeats: useVideo ? mappedBeats : undefined,
       hashtags: current.variantA.hashtags,
       platform: activePlatformPreview,
-      mediaUrl: current.variantA.mediaUrl,
-      mediaType: 'image',
+      mediaUrl: activeAttachedVideo?.videoUrl || current.variantA.mediaUrl,
+      mediaType: useVideo ? 'video' : 'image',
       scheduledTime: new Date(Date.now() + 3600000).toISOString(),
       status: 'scheduled',
       metrics: { impressions: 0, clicks: 0, likes: 0, shares: 0, comments: 0, ctr: 0, conversionRate: 0 },
@@ -1005,12 +1443,14 @@ export default function ContentStudio({
       id: `split-${activePlatformPreview}-b-${Date.now()}`,
       campaignId: 'camp-q4-surge',
       variantLabel: 'Variant B',
+      formatType: selectedFormat,
       hookAngle: current.variantB.hookAngle,
       content: current.variantB.content,
+      videoBeats: useVideo ? mappedBeats : undefined,
       hashtags: current.variantB.hashtags,
       platform: activePlatformPreview,
-      mediaUrl: current.variantB.mediaUrl,
-      mediaType: 'image',
+      mediaUrl: activeAttachedVideo?.videoUrl || current.variantB.mediaUrl,
+      mediaType: useVideo ? 'video' : 'image',
       scheduledTime: new Date(Date.now() + 7200000).toISOString(),
       status: 'scheduled',
       metrics: { impressions: 0, clicks: 0, likes: 0, shares: 0, comments: 0, ctr: 0, conversionRate: 0 },
@@ -1038,7 +1478,120 @@ export default function ContentStudio({
   const currentActiveVariant = activeVariantTab === 'A' ? currentPlatformData.variantA : currentPlatformData.variantB;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div className="space-y-6">
+      {/* CAMPAIGN BUILDER COMMAND HEADER & AGNOSTIC AI ASSISTANT DOCK */}
+      <div className="bg-[#111116] border border-[#1F1F2A] rounded-2xl p-4 sm:p-5 shadow-lg space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          {/* Left: Campaign Title & Live Builder Identity */}
+          <div className="flex items-start gap-3 min-w-0 flex-1">
+            <div className="w-10 h-10 rounded-xl bg-red-950/60 border border-red-700/60 flex items-center justify-center shrink-0">
+              <Flame className="w-5 h-5 text-red-400" />
+            </div>
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-red-950/70 text-red-300 border border-red-800/70">
+                  Campaign Builder
+                </span>
+                <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Live Multi-Asset Pipeline
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={campaignTitle}
+                  onChange={(e) => setCampaignTitle(e.target.value)}
+                  className="bg-transparent text-base sm:text-lg font-extrabold text-white focus:outline-none focus:bg-[#0A0A0C] focus:px-2.5 focus:py-0.5 rounded-lg border border-transparent focus:border-[#2A2A38] w-full max-w-md transition-all"
+                  aria-label="Campaign Name"
+                />
+                <Edit3 className="w-3.5 h-3.5 text-[#52526B] shrink-0 hidden sm:block" />
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Agnostic AI Engine / Code Assistant Plug-in Dock */}
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowLlmModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-[#0A0A0C] hover:bg-[#18181F] border border-[#2A2A38] hover:border-cyan-500/60 transition-all flex items-center gap-2.5 text-left group"
+              title="Plug in any LLM or Code Assistant backend (Gemini, Claude, OpenAI, Ollama, OpenRouter, custom API)"
+            >
+              <div className="w-7 h-7 rounded-lg bg-cyan-950/70 border border-cyan-700/60 flex items-center justify-center shrink-0">
+                <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                  <span>AI Engine · Agnostic</span>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/70">
+                    Switch
+                  </span>
+                </div>
+                <div className="text-xs font-bold text-white truncate max-w-[190px]">
+                  {llmConfig.provider.toUpperCase()} · {llmConfig.model}
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFormat('short_video');
+                setVideoProductionMode('ai_director');
+              }}
+              className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-cyan-950/40 transition-all"
+            >
+              <Film className="w-3.5 h-3.5" />
+              <span>{activeAttachedVideo ? 'Edit Hero Video' : 'AI Create Ad Video'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Campaign Asset Readiness Strip */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[#1F1F2A] text-[11px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2.5 py-1 rounded-lg bg-[#0A0A0C] border border-emerald-800/60 text-emerald-300 font-semibold flex items-center gap-1.5">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              Offer Source: {sourceType === 'screenshot' ? 'Visual / Art' : sourceType === 'url' ? 'Website URL' : sourceType === 'social_repurpose' ? 'Remix' : 'Brief'}
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-[#0A0A0C] border border-emerald-800/60 text-emerald-300 font-semibold flex items-center gap-1.5">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              Prospect: {selectedAvatar.name}
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedFormat('short_video')}
+              className={`px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1.5 transition-all ${
+                activeAttachedVideo
+                  ? 'bg-cyan-950/50 border-cyan-600/70 text-cyan-200'
+                  : 'bg-[#0A0A0C] border-amber-700/60 text-amber-300 hover:border-cyan-500'
+              }`}
+            >
+              <Video className={`w-3.5 h-3.5 ${activeAttachedVideo ? 'text-cyan-400' : 'text-amber-400'}`} />
+              {activeAttachedVideo
+                ? `Hero Video Plugged In (${activeAttachedVideo.source.replace('_', ' ')})`
+                : 'Hero Video: Click to Generate or Record'}
+            </button>
+            <span className="px-2.5 py-1 rounded-lg bg-[#0A0A0C] border border-emerald-800/60 text-emerald-300 font-semibold flex items-center gap-1.5">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              A/B Copy Ready ({selectedPlatforms.length} Channels)
+            </span>
+          </div>
+
+          {activeAttachedVideo && (
+            <button
+              type="button"
+              onClick={() => setActiveAttachedVideo(null)}
+              className="text-[10px] text-[#8B8BA8] hover:text-red-400 font-mono transition-colors"
+            >
+              Detach Video ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       
       {/* LEFT COLUMN: Ingestion & Campaign Configuration (5 cols) */}
       <div className="lg:col-span-5 space-y-6">
@@ -1873,95 +2426,522 @@ export default function ContentStudio({
                 </div>
               </div>
             ) : selectedFormat === 'short_video' ? (
-              /* 9:16 SHORT VIDEO / REEL 3-BEAT STORYBOARD SIMULATOR */
-              <div className="space-y-4 py-2">
-                <div className="w-[310px] sm:w-[340px] mx-auto bg-slate-950 border-[8px] border-slate-800 rounded-[40px] shadow-2xl overflow-hidden relative text-slate-100 flex flex-col font-sans select-none ring-1 ring-cyan-500/30">
-                  {/* Top Video Status Bar */}
-                  <div className="pt-2 px-6 pb-1 flex items-center justify-between bg-black/90 text-[11px] font-semibold text-slate-300">
-                    <span>9:41</span>
-                    <div className="w-16 h-3.5 bg-slate-900 rounded-full flex items-center justify-center">
-                      <span className="w-1 h-1 rounded-full bg-slate-700" />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Wifi className="w-3 h-3" />
-                      <Battery className="w-3.5 h-3.5" />
-                    </div>
+              /* UNIFIED 9:16 AI VIDEO DIRECTOR + DESKTOP/PHONE RECORDER + UPLOAD STUDIO */
+              <div className="space-y-4 py-1">
+                {/* 3-Mode Video Production Switcher */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-900 p-2 rounded-xl border border-slate-800">
+                  <div className="grid grid-cols-3 gap-1.5 flex-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        stopInlineCamera();
+                        setVideoProductionMode('ai_director');
+                      }}
+                      className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                        videoProductionMode === 'ai_director'
+                          ? 'bg-cyan-600 text-white shadow-md shadow-cyan-950/40'
+                          : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                    >
+                      <Bot className="w-3.5 h-3.5" />
+                      <span>AI Video Director</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsVideoPlaying(false);
+                        setVideoProductionMode('record');
+                      }}
+                      className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                        videoProductionMode === 'record'
+                          ? 'bg-red-600 text-white shadow-md shadow-red-950/40'
+                          : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Record Take</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        stopInlineCamera();
+                        setIsVideoPlaying(false);
+                        setVideoProductionMode('upload');
+                      }}
+                      className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                        videoProductionMode === 'upload'
+                          ? 'bg-purple-600 text-white shadow-md shadow-purple-950/40'
+                          : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload Clip</span>
+                    </button>
                   </div>
+                </div>
 
-                  {/* 9:16 Vertical Reel Screen */}
-                  <div className="relative aspect-[9/16] bg-slate-900 overflow-hidden flex flex-col justify-between p-3.5">
-                    {/* Background Visual Creative */}
-                    <img
-                      src={currentActiveVariant.mediaUrl || '/src/assets/images/campaign_creative_asset_1793456644284.jpg'}
-                      alt="Reel visual background"
-                      referrerPolicy="no-referrer"
-                      className="absolute inset-0 w-full h-full object-cover opacity-60"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/90" />
-
-                    {/* Top Ticker: Beat Timing Indicator */}
-                    <div className="relative z-10 flex items-center justify-between">
-                      <div className="bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-cyan-500/40 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                        <span className="text-[10px] font-mono font-bold text-cyan-300">
-                          {videoBeats[currentVideoBeatIndex].timing} · {videoBeats[currentVideoBeatIndex].title}
+                {/* AI Video Director Controls (Voiceover, Music Vibe & Generate Trigger) */}
+                {videoProductionMode === 'ai_director' && (
+                  <div className="bg-slate-900 border border-cyan-500/30 rounded-xl p-3.5 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Film className="w-4 h-4 text-cyan-400" />
+                        <span className="text-xs font-bold text-white uppercase tracking-wider">
+                          AI Ad Video Synthesis
+                        </span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-700/60">
+                          {llmConfig.provider.toUpperCase()}
                         </span>
                       </div>
                       <button
                         type="button"
-                        onClick={() => setIsVideoPlaying(!isVideoPlaying)}
-                        className="p-1.5 rounded-full bg-black/60 text-white hover:bg-black/80"
+                        onClick={() => setIsVoiceoverAudible(!isVoiceoverAudible)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 border transition-all ${
+                          isVoiceoverAudible
+                            ? 'bg-cyan-950/70 text-cyan-300 border-cyan-600'
+                            : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                        }`}
+                        title="Toggle live browser voiceover speech preview during playback"
                       >
-                        {isVideoPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                        <Volume2 className="w-3.5 h-3.5" />
+                        <span>{isVoiceoverAudible ? 'Voiceover Audio: ON' : 'Voiceover Audio: OFF'}</span>
                       </button>
                     </div>
 
-                    {/* Center Overlay: On-Screen Dynamic Graphic Text */}
-                    <div className="relative z-10 my-auto text-center px-3">
-                      <div className="inline-block bg-black/80 backdrop-blur-md px-3 py-2 rounded-xl border border-cyan-400/50 shadow-xl">
-                        <span className="text-sm font-extrabold text-white leading-snug drop-shadow-md">
-                          {videoBeats[currentVideoBeatIndex].overlay}
-                        </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase tracking-wider font-mono text-slate-400 flex items-center gap-1">
+                          <Mic className="w-3 h-3 text-cyan-400" />
+                          AI Voiceover Tone
+                        </label>
+                        <select
+                          value={aiVideoVoiceTone}
+                          onChange={(e) => setAiVideoVoiceTone(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                        >
+                          <option value="Energetic Founder">Energetic Founder</option>
+                          <option value="Minimalist Artist">Minimalist Artist / Creator</option>
+                          <option value="Data-Driven Strategist">Data-Driven Strategist</option>
+                          <option value="Raw Street Hype">Raw Street / Hype Drop</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase tracking-wider font-mono text-slate-400 flex items-center gap-1">
+                          <Music className="w-3 h-3 text-purple-400" />
+                          Soundtrack / Pacing Vibe
+                        </label>
+                        <select
+                          value={aiVideoMusicStyle}
+                          onChange={(e) => setAiVideoMusicStyle(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                        >
+                          <option value="Phonk Synthwave Momentum">Phonk Synthwave Momentum</option>
+                          <option value="Lo-Fi Studio Beat">Lo-Fi Studio Beat</option>
+                          <option value="Cinematic Bass Drop">Cinematic Bass Drop</option>
+                          <option value="Clean Voiceover Only">Clean Voiceover Only</option>
+                        </select>
                       </div>
                     </div>
 
-                    {/* Bottom Info Bar & Voiceover Subtitles */}
-                    <div className="relative z-10 space-y-2">
-                      {/* Voiceover Teleprompter Script */}
-                      <div className="bg-black/75 backdrop-blur-md p-2 rounded-lg border border-slate-800 text-[11px] text-slate-200">
-                        <div className="text-[9px] text-cyan-400 uppercase font-mono font-bold mb-0.5">
-                          🎙️ Voiceover Audio Script
+                    <button
+                      type="button"
+                      disabled={isGeneratingAiVideo}
+                      onClick={() => handleGenerateAiVideo()}
+                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-60 text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-cyan-950/40 transition-all"
+                    >
+                      {isGeneratingAiVideo ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Directing 3-Beat AI Ad Video for {selectedAvatar.name.split(' ')[0]}...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 text-amber-300" />
+                          <span>✨ AI Generate 15s Campaign Video Ad</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* 2-Column Video Workspace: 9:16 Phone Canvas + Controls/Storyboard */}
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+                  {/* Left: 9:16 Vertical Phone Preview / Live Camera / Uploaded Video */}
+                  <div className="xl:col-span-6">
+                    <div className="w-[290px] sm:w-[310px] mx-auto bg-slate-950 border-[8px] border-slate-800 rounded-[38px] shadow-2xl overflow-hidden relative text-slate-100 flex flex-col font-sans select-none ring-1 ring-cyan-500/30">
+                      {/* Top Status Bar */}
+                      <div className="pt-2 px-5 pb-1 flex items-center justify-between bg-black/90 text-[10px] font-semibold text-slate-300">
+                        <span>9:41</span>
+                        <div className="w-14 h-3 bg-slate-900 rounded-full flex items-center justify-center">
+                          <span className="w-1 h-1 rounded-full bg-slate-700" />
                         </div>
-                        <p className="italic">"{videoBeats[currentVideoBeatIndex].audio}"</p>
+                        <div className="flex items-center gap-1">
+                          <Wifi className="w-3 h-3" />
+                          <Battery className="w-3.5 h-3.5" />
+                        </div>
                       </div>
 
-                      {/* Creator Handle & Director Cue */}
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
-                            <AdnetiksLogo size={14} />
-                          </div>
-                          <div>
-                            <div className="text-[11px] font-bold text-white">@adnetiks_hub</div>
-                            <div className="text-[9px] text-slate-300 truncate max-w-[150px]">
-                              🎬 {videoBeats[currentVideoBeatIndex].direction}
+                      {/* 9:16 Screen */}
+                      <div className="relative aspect-[9/16] bg-black overflow-hidden flex flex-col justify-between p-3">
+                        {videoProductionMode === 'ai_director' ? (
+                          <>
+                            {/* Dynamic AI Motion Gradient + Visual Creative */}
+                            <div
+                              className={`absolute inset-0 bg-gradient-to-br ${
+                                videoMotionFrames[currentVideoBeatIndex % videoMotionFrames.length]?.bgGradient ||
+                                'from-red-950 via-black to-slate-950'
+                              } transition-all duration-700`}
+                            />
+                            <img
+                              src={currentActiveVariant.mediaUrl || '/src/assets/images/campaign_creative_asset_1793456644284.jpg'}
+                              alt="AI Video scene background"
+                              referrerPolicy="no-referrer"
+                              className={`absolute inset-0 w-full h-full object-cover opacity-45 transition-transform duration-1000 ${
+                                isVideoPlaying ? 'scale-105' : 'scale-100'
+                              }`}
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/90" />
+
+                            {/* Top Beat Pill + Play/Pause */}
+                            <div className="relative z-10 flex items-center justify-between gap-2">
+                              <div className="bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-full border border-cyan-500/40 flex items-center gap-1.5 min-w-0">
+                                <span
+                                  className={`w-2 h-2 rounded-full bg-cyan-400 shrink-0 ${
+                                    isVideoPlaying ? 'animate-ping' : ''
+                                  }`}
+                                />
+                                <span className="text-[10px] font-mono font-bold text-cyan-300 truncate">
+                                  {videoBeats[currentVideoBeatIndex]?.timing} · AI Scene {currentVideoBeatIndex + 1}/3
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsVideoPlaying(!isVideoPlaying)}
+                                className="p-1.5 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white shadow-md shrink-0"
+                                title={isVideoPlaying ? 'Pause AI Video Preview' : 'Play AI Video Preview'}
+                              >
+                                {isVideoPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                              </button>
                             </div>
-                          </div>
-                        </div>
 
-                        <div className="flex flex-col items-center gap-2 text-slate-200">
-                          <Heart className="w-5 h-5 text-red-500 fill-red-500" />
-                          <MessageCircle className="w-5 h-5" />
-                          <Send className="w-5 h-5" />
-                        </div>
+                            {/* Center Kinetic Typography Overlay + Animated Waveform */}
+                            <div className="relative z-10 my-auto text-center px-2 space-y-3">
+                              <div className="inline-block bg-black/80 backdrop-blur-md px-3 py-2.5 rounded-xl border border-cyan-400/50 shadow-2xl">
+                                <span className="text-sm font-extrabold text-white leading-snug tracking-tight drop-shadow-md">
+                                  {videoBeats[currentVideoBeatIndex]?.kineticOverlay}
+                                </span>
+                              </div>
+
+                              {/* Live Audio Waveform Bars */}
+                              <div className="flex items-end justify-center gap-1 h-7 px-4">
+                                {videoWaveform.map((val, i) => (
+                                  <span
+                                    key={i}
+                                    style={{
+                                      height: `${isVideoPlaying ? Math.max(20, ((val + (currentVideoBeatIndex * 23 + i * 17)) % 100)) : Math.max(18, Math.round(val * 0.45))}%`,
+                                    }}
+                                    className={`w-1 rounded-full transition-all duration-300 ${
+                                      isVideoPlaying ? 'bg-cyan-400' : 'bg-slate-600'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Bottom Subtitles + Track Info */}
+                            <div className="relative z-10 space-y-2">
+                              <div className="bg-black/80 backdrop-blur-md p-2 rounded-lg border border-slate-800 text-[11px] text-slate-200">
+                                <div className="text-[9px] text-cyan-400 uppercase font-mono font-bold mb-0.5 flex items-center justify-between">
+                                  <span>🎙️ {aiVideoVoiceTone}</span>
+                                  <span className="text-purple-300">🎵 {aiVideoMusicStyle.split(' ')[0]}</span>
+                                </div>
+                                <p className="italic leading-snug">
+                                  &quot;{videoBeats[currentVideoBeatIndex]?.spokenScript}&quot;
+                                </p>
+                              </div>
+
+                              <div className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 shrink-0">
+                                    <AdnetiksLogo size={14} />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="text-[11px] font-bold text-white truncate">
+                                      @{brandProfile.name.toLowerCase().replace(/\s+/g, '_')}
+                                    </div>
+                                    <div className="text-[9px] text-slate-300 truncate max-w-[140px]">
+                                      {aiVideoTitle}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-center gap-1.5 text-slate-200">
+                                  <Heart className="w-4 h-4 text-red-500 fill-red-500" />
+                                  <MessageCircle className="w-4 h-4" />
+                                  <Send className="w-4 h-4" />
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        ) : videoProductionMode === 'record' ? (
+                          /* DESKTOP WEBCAM / PHONE CAMERA RECORDER WITH TELEPROMPTER */
+                          <div className="absolute inset-0 flex flex-col justify-between bg-slate-950">
+                            {recordedVideoUrl ? (
+                              <video
+                                src={recordedVideoUrl}
+                                controls
+                                autoPlay
+                                loop
+                                playsInline
+                                className="w-full h-full object-cover"
+                              />
+                            ) : isCameraActive ? (
+                              <video
+                                ref={cameraVideoRef}
+                                muted
+                                playsInline
+                                className={`w-full h-full object-cover ${cameraFacing === 'user' ? 'scale-x-[-1]' : ''}`}
+                              />
+                            ) : (
+                              <div className="flex-1 flex flex-col items-center justify-center p-5 text-center space-y-3">
+                                <div className="w-12 h-12 rounded-full bg-red-950/60 border border-red-700/60 flex items-center justify-center">
+                                  <Camera className="w-6 h-6 text-red-400" />
+                                </div>
+                                <div className="text-xs font-bold text-white">Desktop &amp; Phone Camera Ready</div>
+                                <p className="text-[11px] text-slate-400">
+                                  Record yourself reading the AI-generated teleprompter script, then plug the take right into your campaign.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => startInlineCamera()}
+                                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-md"
+                                >
+                                  Enable Camera &amp; Mic
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Countdown Overlay */}
+                            {recordCountdown !== null && (
+                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-30">
+                                <span className="text-6xl font-black text-red-500 animate-ping">{recordCountdown}</span>
+                              </div>
+                            )}
+
+                            {/* Teleprompter Overlay while camera is active */}
+                            {isCameraActive && !recordedVideoUrl && (
+                              <div className="absolute top-3 inset-x-3 z-20 bg-black/70 backdrop-blur-md p-2.5 rounded-xl border border-red-500/40 space-y-1">
+                                <div className="flex items-center justify-between text-[9px] font-mono uppercase">
+                                  <span className="text-red-400 font-bold">
+                                    {isRecording ? `● REC ${recordingSeconds}s` : 'TELEPROMPTER'}
+                                  </span>
+                                  <span className="text-slate-300">{videoBeats[currentVideoBeatIndex]?.timing}</span>
+                                </div>
+                                <p className="text-[11px] text-white font-semibold leading-snug">
+                                  &quot;{videoBeats[currentVideoBeatIndex]?.spokenScript}&quot;
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          /* UPLOAD VIDEO CLIP PREVIEW */
+                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950">
+                            {uploadedVideoUrl ? (
+                              <video
+                                src={uploadedVideoUrl}
+                                controls
+                                autoPlay
+                                loop
+                                playsInline
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <label className="w-full h-full flex flex-col items-center justify-center p-5 text-center space-y-3 cursor-pointer hover:bg-slate-900/60 transition-colors">
+                                <div className="w-12 h-12 rounded-full bg-purple-950/60 border border-purple-700/60 flex items-center justify-center">
+                                  <Upload className="w-6 h-6 text-purple-400" />
+                                </div>
+                                <div className="text-xs font-bold text-white">Upload Video Clip</div>
+                                <p className="text-[11px] text-slate-400">
+                                  Select MP4, WebM, or MOV from desktop or phone camera roll.
+                                </p>
+                                <span className="px-3.5 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-bold">
+                                  Choose Video File
+                                </span>
+                                <input
+                                  type="file"
+                                  accept="video/*"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    if (e.target.files?.[0]) handleInlineVideoUpload(e.target.files[0]);
+                                  }}
+                                />
+                              </label>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bottom Device Control Bar */}
+                      <div className="py-2 px-3 bg-black flex items-center justify-center gap-2">
+                        {videoProductionMode === 'record' && isCameraActive && !recordedVideoUrl ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = cameraFacing === 'user' ? 'environment' : 'user';
+                                setCameraFacing(next);
+                                startInlineCamera(next);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-slate-900 text-slate-300 hover:text-white text-[10px] font-bold border border-slate-800"
+                            >
+                              Flip Cam
+                            </button>
+                            {!isRecording ? (
+                              <button
+                                type="button"
+                                onClick={handleStartInlineRecording}
+                                className="px-3.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold flex items-center gap-1.5"
+                              >
+                                <Circle className="w-3 h-3 fill-current" />
+                                <span>Record</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={handleStopInlineRecording}
+                                className="px-3.5 py-1 rounded-lg bg-slate-800 text-red-400 border border-red-500/50 text-[11px] font-bold flex items-center gap-1.5"
+                              >
+                                <Square className="w-3 h-3 fill-current" />
+                                <span>Stop ({recordingSeconds}s)</span>
+                              </button>
+                            )}
+                          </>
+                        ) : videoProductionMode === 'record' && recordedVideoUrl ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startInlineCamera()}
+                              className="px-2.5 py-1 rounded-lg bg-slate-900 text-slate-300 hover:text-white text-[10px] font-bold border border-slate-800"
+                            >
+                              Retake
+                            </button>
+                            <a
+                              href={recordedVideoUrl}
+                              download="adnetiks-campaign-take.webm"
+                              className="px-2.5 py-1 rounded-lg bg-emerald-950/70 text-emerald-300 border border-emerald-700/60 text-[10px] font-bold flex items-center gap-1"
+                            >
+                              <Download className="w-3 h-3" />
+                              <span>Save .webm</span>
+                            </a>
+                          </div>
+                        ) : videoProductionMode === 'upload' && uploadedVideoUrl ? (
+                          <label className="px-3 py-1 rounded-lg bg-slate-900 text-purple-300 hover:text-white border border-purple-700/60 text-[10px] font-bold cursor-pointer">
+                            Replace Clip
+                            <input
+                              type="file"
+                              accept="video/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) handleInlineVideoUpload(e.target.files[0]);
+                              }}
+                            />
+                          </label>
+                        ) : (
+                          <div className="w-24 h-1 bg-slate-600 rounded-full" />
+                        )}
                       </div>
                     </div>
-
                   </div>
 
-                  {/* Home Indicator */}
-                  <div className="py-2 bg-black flex justify-center">
-                    <div className="w-24 h-1 bg-slate-600 rounded-full" />
+                  {/* Right: 3-Beat AI Director Timeline & Plug-Into-Campaign Action */}
+                  <div className="xl:col-span-6 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-white">
+                        3-Beat Retention Script
+                      </span>
+                      <span className="text-[10px] font-mono text-cyan-400">Click beat to scrub</span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {videoBeats.map((beat, idx) => {
+                        const isActive = idx === currentVideoBeatIndex;
+                        return (
+                          <div
+                            key={`${beat.timing}-${idx}`}
+                            onClick={() => setCurrentVideoBeatIndex(idx)}
+                            className={`p-3 rounded-xl border cursor-pointer transition-all space-y-1.5 ${
+                              isActive
+                                ? 'bg-slate-900 border-cyan-500/80 ring-1 ring-cyan-500/30'
+                                : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-white truncate">{beat.title}</span>
+                              <span className="text-[10px] font-mono text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 shrink-0">
+                                {beat.timing}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-200 italic">
+                              &quot;{beat.spokenScript}&quot;
+                            </p>
+                            <div className="text-[10px] text-amber-300 font-semibold">
+                              Overlay: {beat.kineticOverlay}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              🎬 {beat.visualDirection}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* PLUG VIDEO INTO CAMPAIGN ACTION CARD */}
+                    <div
+                      className={`p-3.5 rounded-xl border space-y-2.5 ${
+                        activeAttachedVideo
+                          ? 'bg-emerald-950/25 border-emerald-600/60'
+                          : 'bg-slate-900 border-red-600/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                          {activeAttachedVideo ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                              <span>Video Plugged Into Campaign</span>
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="w-4 h-4 text-amber-400" />
+                              <span>Attach Video to &quot;{campaignTitle}&quot;</span>
+                            </>
+                          )}
+                        </div>
+                        {activeAttachedVideo && (
+                          <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/60">
+                            {activeAttachedVideo.source.replace('_', ' ')}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        {activeAttachedVideo
+                          ? `Locked in: "${activeAttachedVideo.title}". Clicking "Auto-Schedule with AI" or "Launch A/B Split Test" below will publish this video across ${selectedPlatforms.join(', ').toUpperCase()}.`
+                          : 'Plug your AI-generated 3-beat video, camera recording, or uploaded clip straight into your active campaign posts & split tests.'}
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={handlePlugActiveVideoIntoCampaign}
+                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-red-950/40 transition-all"
+                      >
+                        <Film className="w-4 h-4" />
+                        <span>
+                          {activeAttachedVideo
+                            ? 'Update Plugged-In Campaign Video'
+                            : '⚡ Plug This Video Into Active Campaign'}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2756,7 +3736,7 @@ export default function ContentStudio({
                         {currentVideoBeatIndex === idx && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />}
                       </div>
                       <div className="text-[11px] font-bold truncate">{beat.title}</div>
-                      <div className="text-[10px] text-slate-400 truncate mt-0.5">{beat.overlay}</div>
+                      <div className="text-[10px] text-slate-400 truncate mt-0.5">{beat.kineticOverlay}</div>
                     </button>
                   ))}
                 </div>
@@ -3163,6 +4143,150 @@ export default function ContentStudio({
         </div>
       )}
 
+      {/* MODAL: AGNOSTIC AI ENGINE & CODE ASSISTANT PLUG-IN */}
+      {showLlmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-[#111116] border border-[#2A2A38] w-full max-w-xl rounded-2xl shadow-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[#1F1F2A] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-cyan-950/70 border border-cyan-700/60 flex items-center justify-center">
+                  <Cpu className="w-4 h-4 text-cyan-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Plug In Any AI Engine or Code Assistant</h3>
+                  <p className="text-[11px] text-[#8B8BA8]">
+                    BE-agnostic runtime switcher — hot-swap Gemini, Claude, OpenAI, Ollama, vLLM, or OpenRouter.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLlmModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Provider Selector Cards */}
+            <div className="grid grid-cols-2 gap-2.5">
+              {[
+                {
+                  id: 'gemini' as const,
+                  label: 'Google Gemini',
+                  defaultModel: 'gemini-2.0-flash',
+                  hint: 'Fast multimodal & campaign synthesis',
+                },
+                {
+                  id: 'anthropic' as const,
+                  label: 'Anthropic Claude',
+                  defaultModel: 'claude-3-5-sonnet-latest',
+                  hint: 'Nuanced copywriting & brand voice',
+                },
+                {
+                  id: 'openai' as const,
+                  label: 'OpenAI / Codex',
+                  defaultModel: 'gpt-4o-mini',
+                  hint: 'Structured JSON & ad creative hooks',
+                },
+                {
+                  id: 'openai_compatible' as const,
+                  label: 'Local / Custom Assistant',
+                  defaultModel: 'llama3.3:70b',
+                  hint: 'Ollama, LM Studio, vLLM, OpenRouter',
+                },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setLlmDraftProvider(opt.id);
+                    setLlmDraftModel(opt.defaultModel);
+                    if (opt.id === 'openai_compatible' && !llmDraftBaseUrl) {
+                      setLlmDraftBaseUrl('http://localhost:11434/v1');
+                    }
+                  }}
+                  className={`p-3 rounded-xl border text-left transition-all space-y-1 ${
+                    llmDraftProvider === opt.id
+                      ? 'bg-cyan-950/30 border-cyan-500 ring-1 ring-cyan-500/40'
+                      : 'bg-[#0A0A0C] border-[#1F1F2A] hover:border-[#2A2A38]'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-white flex items-center justify-between">
+                    <span>{opt.label}</span>
+                    {llmDraftProvider === opt.id && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                  </div>
+                  <div className="text-[10px] text-[#8B8BA8]">{opt.hint}</div>
+                </button>
+              ))}
+            </div>
+
+            {/* Runtime Fields */}
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-300">Model Identifier</label>
+                <input
+                  type="text"
+                  value={llmDraftModel}
+                  onChange={(e) => setLlmDraftModel(e.target.value)}
+                  placeholder="e.g. gemini-2.0-flash, claude-3-5-sonnet-latest, gpt-4o, llama3.3"
+                  className="w-full bg-[#0A0A0C] border border-[#1F1F2A] rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {llmDraftProvider === 'openai_compatible' && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300">OpenAI-Compatible Base URL</label>
+                  <input
+                    type="url"
+                    value={llmDraftBaseUrl}
+                    onChange={(e) => setLlmDraftBaseUrl(e.target.value)}
+                    placeholder="http://localhost:11434/v1 or https://openrouter.ai/api/v1"
+                    className="w-full bg-[#0A0A0C] border border-[#1F1F2A] rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                  <span>API Key (Optional — leave blank to use .env key or local Ollama)</span>
+                  <span className="text-[10px] font-mono text-emerald-400">
+                    {llmConfig.hasApiKey ? 'Env Key Detected ✓' : 'Heuristic Fallback Ready'}
+                  </span>
+                </label>
+                <input
+                  type="password"
+                  value={llmDraftApiKey}
+                  onChange={(e) => setLlmDraftApiKey(e.target.value)}
+                  placeholder="sk-... / AIza... (kept in server runtime memory only)"
+                  className="w-full bg-[#0A0A0C] border border-[#1F1F2A] rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-[#1F1F2A]">
+              <button
+                type="button"
+                onClick={() => setShowLlmModal(false)}
+                className="px-4 py-2 bg-[#18181F] hover:bg-[#22222E] text-slate-300 text-xs font-semibold rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSavingLlm}
+                onClick={handleSaveLlmConfig}
+                className="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg shadow-cyan-950/40 flex items-center gap-1.5 transition-all"
+              >
+                <Cpu className="w-4 h-4" />
+                <span>{isSavingLlm ? 'Switching Engine...' : 'Apply Active AI Engine'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      </div>
     </div>
   );
 }

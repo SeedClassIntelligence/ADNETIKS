@@ -53,7 +53,7 @@ export default function TopNav({
 
   const navItems = [
     { id: 'home', label: 'Command Hub' },
-    { id: 'studio', label: 'Create Studio' },
+    { id: 'studio', label: 'Campaign Builder' },
     { id: 'video_studio', label: 'Video Studio' },
     { id: 'scheduler', label: 'Smart Queue' },
     { id: 'split_lab', label: 'A/B Lab' },

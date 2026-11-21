@@ -31,6 +31,7 @@ import {
   CompetitorProfile,
   InboundSocialMention,
   UserRole,
+  CampaignVideoAsset,
 } from './types';
 
 import {
@@ -113,6 +114,10 @@ export default function App() {
   // Modal & Drawer States
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+
+  // Active Hero Video Asset Plugged Into Campaign Builder (AI Generated, Recorded, or Uploaded)
+  const [attachedCampaignVideo, setAttachedCampaignVideo] = useState<CampaignVideoAsset | null>(null);
+  const [studioInitialFormat, setStudioInitialFormat] = useState<'social_post' | 'sponsored_ad' | 'short_video' | 'carousel' | undefined>(undefined);
 
   // In-App Toast System
   const [toast, setToast] = useState<{ id: string; title: string; message: string } | null>(null);
@@ -264,9 +269,21 @@ export default function App() {
     setActiveTab('scheduler');
   };
 
+  // Plug Video Asset from Video Studio directly into Campaign Builder
+  const handlePlugVideoIntoCampaign = (video: CampaignVideoAsset) => {
+    setAttachedCampaignVideo(video);
+    setStudioInitialFormat('short_video');
+    setActiveTab('studio');
+    showNotificationToast(
+      'Video Plugged Into Campaign Builder',
+      `"${video.title}" is now attached as your active campaign hero video.`
+    );
+  };
+
   // Navigation from Command Hub
   const handleNavigateToStudio = (mode: 'screenshot' | 'url' | 'brief' = 'screenshot') => {
     setStudioSourceMode(mode);
+    setStudioInitialFormat(undefined);
     setActiveTab('studio');
   };
 
@@ -284,7 +301,7 @@ export default function App() {
       />
 
       {/* Main Workspace Frame */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 pl-16 lg:pl-0">
         
         {/* Top Header */}
         <TopNav
@@ -330,6 +347,9 @@ export default function App() {
               preloadedTheme={preloadedTheme}
               onClearPreloadedTheme={() => setPreloadedTheme(null)}
               initialSourceMode={studioSourceMode}
+              initialFormat={studioInitialFormat}
+              attachedVideo={attachedCampaignVideo}
+              onAttachVideo={setAttachedCampaignVideo}
             />
           )}
 
@@ -366,6 +386,7 @@ export default function App() {
               templates={videoTemplates}
               adMetrics={adMetrics}
               onSendScriptToQueue={handleSendScriptToQueue}
+              onPlugIntoCampaign={handlePlugVideoIntoCampaign}
               userRole={userRole}
               showNotificationToast={showNotificationToast}
             />

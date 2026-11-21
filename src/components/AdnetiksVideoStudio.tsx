@@ -13,6 +13,7 @@ import {
   TikTokAdCampaignMetrics,
   TikTokStoryboardBeat,
   UserRole,
+  CampaignVideoAsset,
 } from '../types';
 import {
   Video,
@@ -50,6 +51,7 @@ interface AdnetiksVideoStudioProps {
   templates: TikTokVideoTemplate[];
   adMetrics: TikTokAdCampaignMetrics;
   onSendScriptToQueue: (scriptTitle: string, scriptContent: string) => void;
+  onPlugIntoCampaign?: (video: CampaignVideoAsset) => void;
   userRole: UserRole;
   showNotificationToast: (title: string, message: string) => void;
 }
@@ -59,6 +61,7 @@ export default function AdnetiksVideoStudio({
   templates,
   adMetrics,
   onSendScriptToQueue,
+  onPlugIntoCampaign,
   userRole,
   showNotificationToast,
 }: AdnetiksVideoStudioProps) {
@@ -635,15 +638,56 @@ export default function AdnetiksVideoStudio({
           {/* Action Bar */}
           <div className="p-4 rounded-2xl bg-[#111116] border border-[#1F1F2A] flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-[#8B8BA8]">
-              Ready to lock script and audio into your automated social queue?
+              Plug this video directly into your active Campaign Builder or lock into Smart Queue.
             </div>
-            <button
-              onClick={handleExportScript}
-              className="px-4 py-2 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Export Video Script to Queue</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {onPlugIntoCampaign && (
+                <button
+                  onClick={() => {
+                    const source: CampaignVideoAsset['source'] =
+                      videoMode === 'camera' && recordedVideoUrl
+                        ? 'recorded'
+                        : videoMode === 'upload' && uploadedVideoUrl
+                        ? 'uploaded'
+                        : 'ai_generated';
+                    onPlugIntoCampaign({
+                      id: `vid-${Date.now()}`,
+                      title: activeTemplate.title,
+                      hookAngle: activeTemplate.category,
+                      source,
+                      aspectRatio: '9:16',
+                      videoUrl:
+                        source === 'recorded'
+                          ? recordedVideoUrl || undefined
+                          : source === 'uploaded'
+                          ? uploadedVideoUrl || undefined
+                          : undefined,
+                      voiceTone: 'Creator Direct',
+                      backgroundTrack: activeSound?.title || 'Trending Commercial Audio',
+                      beats: activeTemplate.beats.map((b) => ({
+                        timing: b.timing,
+                        title: b.beatTitle,
+                        spokenScript: b.spokenAudio,
+                        visualDirection: b.visualDirection,
+                        kineticOverlay: b.onScreenText,
+                      })),
+                      attachedAt: new Date().toISOString(),
+                    });
+                  }}
+                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl shadow-md shadow-cyan-950/40 flex items-center gap-2 transition-all"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Plug Into Campaign Builder</span>
+                </button>
+              )}
+              <button
+                onClick={handleExportScript}
+                className="px-4 py-2 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Export Script to Queue</span>
+              </button>
+            </div>
           </div>
 
         </div>

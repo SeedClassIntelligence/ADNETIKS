@@ -47,7 +47,7 @@ export default function Sidebar({
       group: 'CREATE',
       items: [
         { id: 'home', label: 'Command Hub', icon: Home, badge: 'Live' },
-        { id: 'studio', label: 'Create Studio', icon: Sparkles, highlight: true },
+        { id: 'studio', label: 'Campaign Builder', icon: Sparkles, highlight: true },
         { id: 'video_studio', label: 'Adnetiks Video', icon: Video },
       ],
     },

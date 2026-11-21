@@ -618,3 +618,231 @@ function generateHeuristicProspects(payload: DiscoverAvatarsPayload) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// AI VIDEO GENERATION ENGINE & MULTI-ASSET CAMPAIGN SYNTHESIS
+// ---------------------------------------------------------------------------
+
+export interface GenerateAiVideoPayload {
+  sourceInput: string;
+  sourceType: string;
+  campaignGoal?: string;
+  brandProfile: {
+    name: string;
+    archetype: string;
+  };
+  customerAvatar?: {
+    name: string;
+    roleTitle: string;
+    painPoints?: string[];
+  };
+  voiceTone?: string;
+  musicStyle?: string;
+}
+
+export async function handleGenerateAiVideo(payload: GenerateAiVideoPayload) {
+  const brandName = payload.brandProfile.name || 'ADNETIKS';
+  const avatarName = payload.customerAvatar?.name || 'Ideal Target Prospect';
+  const inputSnippet = (payload.sourceInput || '').trim();
+
+  const systemInstruction = `You are ADNETIKS AI Video Director, an award-winning creative director specializing in short-form 9:16 video ads for Reels, TikTok, Shorts, and X.
+Brand: ${brandName} (${payload.brandProfile.archetype})
+Target Persona: ${avatarName} (${payload.customerAvatar?.roleTitle || 'Decision Maker'})
+Voice Tone: ${payload.voiceTone || 'Energetic Founder'}
+Music Style: ${payload.musicStyle || 'Phonk Synthwave Momentum'}
+
+Source Offer Context:
+"${inputSnippet.slice(0, 1500)}"
+
+Task:
+Generate a high-converting 3-beat retention arc for a 15-second viral video ad.
+Format your output strictly as JSON conforming to:
+{
+  "title": "Short punchy video title",
+  "hookAngle": "Core hook angle",
+  "beats": [
+    {
+      "timing": "0s - 3s",
+      "title": "Beat 1: The Contrarian Hook",
+      "spokenScript": "Spoken teleprompter voiceover line (under 15 words)",
+      "visualDirection": "Action and camera framing direction",
+      "kineticOverlay": "UPPERCASE PUNCHY TEXT OVERLAY",
+      "brollPrompt": "AI image/video scene generator prompt for this beat"
+    },
+    {
+      "timing": "3s - 12s",
+      "title": "Beat 2: Proof & Avatar Teardown",
+      "spokenScript": "Spoken line explaining proof and transformation (under 30 words)",
+      "visualDirection": "Screen motion or b-roll cut description",
+      "kineticOverlay": "TRANSFORMATION DATA METRIC OVERLAY",
+      "brollPrompt": "AI image/video scene generator prompt for this beat"
+    },
+    {
+      "timing": "12s - 15s",
+      "title": "Beat 3: Urgency & Call to Action",
+      "spokenScript": "Direct call to action (under 12 words)",
+      "visualDirection": "Closing gesture, animated arrow, and CTA button cue",
+      "kineticOverlay": "TAP LINK IN BIO ⚡",
+      "brollPrompt": "AI image/video scene generator prompt for this beat"
+    }
+  ]
+}`;
+
+  try {
+    const responseText = await generateText('Synthesize a viral 3-beat short video ad.', systemInstruction);
+    if (responseText) {
+      const parsed = JSON.parse(responseText);
+      if (parsed.beats && Array.isArray(parsed.beats) && parsed.beats.length === 3) {
+        return {
+          ...parsed,
+          aspectRatio: '9:16',
+          voiceTone: payload.voiceTone || 'Energetic Founder',
+          backgroundTrack: payload.musicStyle || 'Phonk Synthwave Momentum',
+          isAiGenerated: true,
+          audioWaveform: [40, 75, 30, 90, 60, 100, 45, 80, 65, 95, 35, 85, 70, 90, 50],
+          videoMotionFrames: [
+            { bgGradient: 'from-red-950 via-black to-slate-950', accentColor: '#E8192C' },
+            { bgGradient: 'from-cyan-950 via-black to-slate-950', accentColor: '#06B6D4' },
+            { bgGradient: 'from-purple-950 via-black to-slate-950', accentColor: '#A855F7' },
+          ],
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('AI Video LLM generation failed or timed out, using heuristic generator:', err);
+  }
+
+  // Heuristic Video Generation Engine
+  const isMusic = /music|track|album|single|artist|spotify|sound/i.test(inputSnippet);
+  const isCodeOrIntel = /github|seed|intelligence|code|ai|agent|srt|repo/i.test(inputSnippet);
+  const isEcommerce = /store|product|shop|checkout|sale|cart/i.test(inputSnippet);
+
+  if (isMusic) {
+    return {
+      title: 'Sound Velocity: Behind The Frequency Drop',
+      hookAngle: 'Raw Unfiltered Studio Moment',
+      aspectRatio: '9:16',
+      voiceTone: payload.voiceTone || 'Minimalist Artist',
+      backgroundTrack: payload.musicStyle || 'Dark Lo-Fi Ambient',
+      isAiGenerated: true,
+      audioWaveform: [35, 65, 80, 45, 95, 70, 100, 85, 60, 90, 40, 85, 95, 75, 50],
+      videoMotionFrames: [
+        { bgGradient: 'from-purple-950 via-black to-slate-950', accentColor: '#A855F7' },
+        { bgGradient: 'from-rose-950 via-black to-slate-950', accentColor: '#F43F5E' },
+        { bgGradient: 'from-amber-950 via-black to-slate-950', accentColor: '#F59E0B' },
+      ],
+      beats: [
+        {
+          timing: '0s - 3s',
+          title: 'Beat 1: The Sonic Hook',
+          spokenScript: 'Stop listening to predictable algorithmic audio. Listen to what happened at 3 AM in the studio.',
+          visualDirection: 'Extreme close-up of tape reel spinning, sudden cut to bass drop with dark studio lighting.',
+          kineticOverlay: 'TURN THE SOUND UP 🎧',
+          brollPrompt: 'Close-up studio condenser microphone with moody purple neon rim light and soundboard faders',
+        },
+        {
+          timing: '3s - 12s',
+          title: 'Beat 2: The Raw Creation Arc',
+          spokenScript: 'We stripped out all the polished filler and built pure sonic momentum designed to loop forever.',
+          visualDirection: 'Fast rhythmic cut between audio waveform spectrum, hands on synthesizer, and vinyl lathe cutter.',
+          kineticOverlay: 'PURE SONIC MOMENTUM ⚡',
+          brollPrompt: 'Analogue synthesizer keyboard with illuminated keys and kinetic audio frequency visualizer',
+        },
+        {
+          timing: '12s - 15s',
+          title: 'Beat 3: Stream & Pre-Save Direct',
+          spokenScript: 'Stream the official release now on Spotify and Apple Music at the link in bio.',
+          visualDirection: 'Album art sleeve slides into camera frame with animated vibrating sound wave icon and link arrow.',
+          kineticOverlay: 'STREAM NOW ON SPOTIFY 🟢',
+          brollPrompt: 'Sleek dark minimalist vinyl record sleeve with glowing neon typography and play button icon',
+        },
+      ],
+    };
+  }
+
+  if (isCodeOrIntel) {
+    return {
+      title: 'Autonomous Code & Intelligence Pipeline',
+      hookAngle: 'The Provenance & Velocity Advantage',
+      aspectRatio: '9:16',
+      voiceTone: payload.voiceTone || 'High-Velocity Technical Founder',
+      backgroundTrack: payload.musicStyle || 'Phonk Synthwave Momentum',
+      isAiGenerated: true,
+      audioWaveform: [50, 80, 40, 90, 65, 100, 55, 85, 70, 95, 45, 90, 75, 85, 60],
+      videoMotionFrames: [
+        { bgGradient: 'from-cyan-950 via-black to-slate-950', accentColor: '#06B6D4' },
+        { bgGradient: 'from-emerald-950 via-black to-slate-950', accentColor: '#10B981' },
+        { bgGradient: 'from-red-950 via-black to-slate-950', accentColor: '#E8192C' },
+      ],
+      beats: [
+        {
+          timing: '0s - 3s',
+          title: 'Beat 1: The Fatal Architecture Flaw',
+          spokenScript: 'Most teams plug generic AI into their stack and wonder why their codebase falls apart.',
+          visualDirection: 'Rapid terminal screen zoom with code diff highlighting red syntax errors, followed by sharp cut to camera.',
+          kineticOverlay: 'WHY GENERIC AI BREAKS CODEBASES 🛑',
+          brollPrompt: 'Dark modern IDE code editor with matrix code scrolling and holographic error alerts in neon red',
+        },
+        {
+          timing: '3s - 12s',
+          title: 'Beat 2: Cryptographic Provenance & Velocity',
+          spokenScript: 'SeedClass Intelligence orchestrates verified code context with cryptographic trust chains and 4x execution speed.',
+          visualDirection: 'Screen recording transition cut showing repository architecture benchmark graphs climbing with green checkmarks.',
+          kineticOverlay: 'VERIFIED CONTEXT + 4X VELOCITY ⚡',
+          brollPrompt: 'High-tech 3D data pipeline visualization with interconnected nodes glowing in emerald green and obsidian',
+        },
+        {
+          timing: '12s - 15s',
+          title: 'Beat 3: Deploy & Star the Repo',
+          spokenScript: 'Clone the repository and inspect the architecture at the link below.',
+          visualDirection: 'Presenter points down to GitHub clone button with glowing green terminal prompt and link overlay.',
+          kineticOverlay: 'CLONE ON GITHUB 🚀',
+          brollPrompt: 'Sleek terminal prompt showing git clone command and glowing GitHub contribution matrix',
+        },
+      ],
+    };
+  }
+
+  // Default Universal Creator / Business Video
+  return {
+    title: 'Stop Broadcasting Generic Marketing',
+    hookAngle: 'The 3.4x Conversion Breakthrough',
+    aspectRatio: '9:16',
+    voiceTone: payload.voiceTone || 'Energetic Founder',
+    backgroundTrack: payload.musicStyle || 'Phonk Synthwave Momentum',
+    isAiGenerated: true,
+    audioWaveform: [45, 70, 35, 95, 60, 100, 50, 85, 65, 90, 40, 85, 70, 95, 55],
+    videoMotionFrames: [
+      { bgGradient: 'from-red-950 via-black to-slate-950', accentColor: '#E8192C' },
+      { bgGradient: 'from-amber-950 via-black to-slate-950', accentColor: '#F59E0B' },
+      { bgGradient: 'from-emerald-950 via-black to-slate-950', accentColor: '#10B981' },
+    ],
+    beats: [
+      {
+        timing: '0s - 3s',
+        title: 'Beat 1: The Contrarian Hook',
+        spokenScript: 'Stop posting general company announcements on social media. Nobody cares.',
+        visualDirection: 'Close-up camera framing, sudden stop in hallway, sharp hand gesture at lens.',
+        kineticOverlay: 'WHY YOUR POSTS GET 0 REACH 🛑',
+        brollPrompt: 'Cinematic close-up of creator looking frustrated at flatlined social engagement chart on smartphone',
+      },
+      {
+        timing: '3s - 12s',
+        title: 'Beat 2: Proof & Avatar Teardown',
+        spokenScript: `When we aligned our schedule to our customer avatar's 2 AM fires, our CTR climbed 3.4x.`,
+        visualDirection: 'Screen recording cut to ADNETIKS customer avatar dashboard showing 5.4% CTR lift.',
+        kineticOverlay: 'PSYCHOLOGICAL AVATAR TARGETING = 3.4x CTR 📈',
+        brollPrompt: 'High-contrast studio shot of executive analyzing dynamic conversion heatmaps on modern curved monitor',
+      },
+      {
+        timing: '12s - 15s',
+        title: 'Beat 3: Urgency & Call to Action',
+        spokenScript: 'Grab our avatar mapping framework at the link in bio before your competitors do.',
+        visualDirection: 'Points downward at phone screen with animated red arrow overlay and CTA button.',
+        kineticOverlay: 'TAP LINK IN BIO TO AUTOMATE ⚡',
+        brollPrompt: 'Crisp smartphone screen displaying instant automated scheduling queue with one-click approve button',
+      },
+    ],
+  };
+}
+
+
