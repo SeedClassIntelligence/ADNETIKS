@@ -99,8 +99,8 @@ export default function HomeDashboard({
     },
     {
       num: '04',
-      title: 'Signals & Inbox',
-      status: 'Analytics & Fan Replies',
+      title: 'Analytics & Inbox',
+      status: 'Live Attribution, Heatmaps & DMs',
       done: false,
       icon: BarChart2,
       tab: 'signals',

@@ -76,8 +76,8 @@ export default function Sidebar({
     },
     {
       id: 'signals',
-      label: 'Signals & Inbox',
-      sublabel: 'Metrics & fan replies',
+      label: 'Analytics & Inbox',
+      sublabel: 'Metrics, trends & DMs',
       icon: BarChart2,
       step: '04',
       badge: undefined as string | undefined,

@@ -623,10 +623,10 @@ export default function App() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1F1F2A] pb-4">
                 <div>
                   <h2 className="text-lg font-extrabold text-white tracking-tight">
-                    Audience Signals &amp; Engagement Inbox
+                    Analytics &amp; Engagement Inbox
                   </h2>
                   <p className="text-xs text-[#8B8BA8]">
-                    Track what converts, deploy rising trends into Campaigns, and resolve fan/customer replies in your brand voice.
+                    Track real clicks, conversions &amp; trends, feed winners into your Brand Brain, and resolve fan/customer replies.
                   </p>
                 </div>
                 <div className="flex items-center gap-1 bg-[#111116] p-1 rounded-xl border border-[#1F1F2A] self-start sm:self-auto">
@@ -638,7 +638,7 @@ export default function App() {
                         : 'text-[#8B8BA8] hover:text-white'
                     }`}
                   >
-                    Growth &amp; Trends
+                    Analytics &amp; Trends
                   </button>
                   <button
                     onClick={() => setSignalsSubTab('inbox')}

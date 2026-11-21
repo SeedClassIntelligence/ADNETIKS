@@ -66,9 +66,9 @@ export default function TopNav({
     distribution: { step: '03', title: 'Distribution', subtitle: 'Smart Calendar Queue & A/B Hook Experiments' },
     scheduler: { step: '03', title: 'Distribution', subtitle: 'Smart Calendar Queue & A/B Hook Experiments' },
     split_lab: { step: '03', title: 'Distribution', subtitle: 'Smart Calendar Queue & A/B Hook Experiments' },
-    signals: { step: '04', title: 'Signals & Inbox', subtitle: 'Growth analytics, trends & fan engagement' },
-    analytics: { step: '04', title: 'Signals & Inbox', subtitle: 'Growth analytics, trends & fan engagement' },
-    service_agents: { step: '04', title: 'Signals & Inbox', subtitle: 'Growth analytics, trends & fan engagement' },
+    signals: { step: '04', title: 'Analytics & Inbox', subtitle: 'Live attribution, growth analytics & fan replies' },
+    analytics: { step: '04', title: 'Analytics & Inbox', subtitle: 'Live attribution, growth analytics & fan replies' },
+    service_agents: { step: '04', title: 'Analytics & Inbox', subtitle: 'Live attribution, growth analytics & fan replies' },
     integrations: { title: 'AI Engines & Connectors', subtitle: 'Plug in any LLM, code assistant, or publishing channel' },
   };
 
