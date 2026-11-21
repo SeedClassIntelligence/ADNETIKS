@@ -1,38 +1,35 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * ADNETIKS Studio Command Hub / Home Dashboard
- * Unified command center for creators, artists, and brand builders.
+ * ADNETIKS Workspace Overview
+ * Sequential 4-Pillar Flow: Brand & Audience -> Campaigns -> Distribution -> Signals
  */
 
 import { useState } from 'react';
 import {
   Sparkles,
-  Upload,
-  Link2,
-  Video,
   Calendar,
-  ArrowUpRight,
-  GitBranch,
-  MessageCircle,
-  TrendingUp,
-  Eye,
-  CheckCircle2,
-  Play,
-  Layers,
   ChevronRight,
-  ShieldCheck,
-  Zap,
+  Users,
+  BarChart2,
+  Plus,
+  CheckCircle2,
+  ArrowRight,
+  FolderKanban,
+  Wand2,
+  MapPin,
 } from 'lucide-react';
 import {
+  BrandProfile,
   Campaign,
   PostVariant,
   SplitTestExperiment,
   CustomerAvatar,
-  SocialPlatform,
 } from '../types';
+import BrandSetupWizard from './BrandSetupWizard';
 
 interface HomeDashboardProps {
+  brandProfile: BrandProfile;
   campaigns: Campaign[];
   posts: PostVariant[];
   splitTests: SplitTestExperiment[];
@@ -40,9 +37,18 @@ interface HomeDashboardProps {
   onNavigateToStudio: (mode?: 'screenshot' | 'url' | 'brief') => void;
   onNavigateToTab: (tab: string) => void;
   onSelectAvatar: (avatar: CustomerAvatar) => void;
+  onOpenCampaign: (campaignId: string) => void;
+  onCreateCampaign: () => void;
+  onCompleteBrandSetup: (
+    updatedBrand: BrandProfile,
+    discoveredAvatars: CustomerAvatar[],
+    goToCampaigns?: boolean
+  ) => void;
+  showNotificationToast: (title: string, message: string) => void;
 }
 
 export default function HomeDashboard({
+  brandProfile,
   campaigns,
   posts,
   splitTests,
@@ -50,221 +56,297 @@ export default function HomeDashboard({
   onNavigateToStudio,
   onNavigateToTab,
   onSelectAvatar,
+  onOpenCampaign,
+  onCreateCampaign,
+  onCompleteBrandSetup,
+  showNotificationToast,
 }: HomeDashboardProps) {
+  const [isBrandConfigured, setIsBrandConfigured] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && localStorage.getItem('adnetiks_brand_configured') === 'true';
+  });
+  const [showWizard, setShowWizard] = useState<boolean>(!isBrandConfigured);
+
   const scheduledCount = posts.filter((p) => p.status === 'scheduled' || p.status === 'approved').length;
-  const publishedCount = posts.filter((p) => p.status === 'published').length;
   const runningTests = splitTests.filter((t) => t.status === 'running').length;
 
+  const workflowSteps = [
+    {
+      num: '01',
+      title: 'Brand & Audience',
+      status: isBrandConfigured ? `${brandProfile.name} · ${avatars.length} Personas` : 'Calibrate Your Brand',
+      done: isBrandConfigured,
+      icon: Users,
+      tab: 'brand_avatar',
+      accent: 'text-red-400',
+    },
+    {
+      num: '02',
+      title: 'Campaigns',
+      status: `${campaigns.length} Active Project${campaigns.length === 1 ? '' : 's'}`,
+      done: campaigns.length > 0,
+      icon: Sparkles,
+      tab: 'studio',
+      accent: 'text-cyan-400',
+    },
+    {
+      num: '03',
+      title: 'Distribution',
+      status: `${scheduledCount} Queued · ${runningTests} A/B Live`,
+      done: scheduledCount > 0,
+      icon: Calendar,
+      tab: 'distribution',
+      accent: 'text-emerald-400',
+    },
+    {
+      num: '04',
+      title: 'Signals & Inbox',
+      status: 'Analytics & Fan Replies',
+      done: false,
+      icon: BarChart2,
+      tab: 'signals',
+      accent: 'text-amber-400',
+    },
+  ];
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-200">
-      
-      {/* Top Banner / Studio Intake */}
-      <div className="relative overflow-hidden rounded-3xl border border-[#1F1F2A] bg-gradient-to-br from-[#111116] via-[#0D0D11] to-[#14080B] p-6 sm:p-8 shadow-2xl">
-        <div className="absolute top-0 right-0 -mt-12 -mr-12 w-96 h-96 rounded-full bg-red-600/10 blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-950/60 border border-red-800/60 text-red-400 text-xs font-semibold uppercase tracking-wider font-display">
-              <Zap className="w-3.5 h-3.5" />
-              Creative Studio Engine · BE-Agnostic
-            </div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight font-display leading-tight">
-              One Creative Studio. <br className="hidden sm:inline" />
-              <span className="bg-gradient-to-r from-red-400 via-rose-300 to-amber-200 bg-clip-text text-transparent">
-                Every Asset, Video &amp; Post Coordinated.
-              </span>
-            </h1>
-            <p className="text-sm text-[#8B8BA8] max-w-xl">
-              Feed in a screenshot, artwork, song link, or brief. Adnetiks calibrates your brand voice, matches your fan personas, generates A/B variants, and schedules peak-window distribution across all channels.
+    <div className="space-y-7 animate-in fade-in duration-200">
+      {/* 4-Step Guided Flow Strip */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg sm:text-xl font-extrabold text-white tracking-tight">
+              {brandProfile.name} — Campaign Operating System
+            </h2>
+            <p className="text-xs text-[#8B8BA8]">
+              Follow the 4-stage loop: define your brand &amp; demographics, build a campaign, schedule delivery, and track real signals.
             </p>
           </div>
-
-          {/* Direct Creation Launchers */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full lg:w-auto shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => onNavigateToStudio('screenshot')}
-              className="group flex items-center gap-3 p-3.5 rounded-2xl bg-[#18181F] border border-[#2A2A38] hover:border-red-500/80 hover:bg-[#1C1C26] transition-all text-left shadow-lg"
+              onClick={() => setShowWizard(!showWizard)}
+              className="px-3 py-1.5 rounded-xl bg-[#111116] hover:bg-[#18181F] border border-[#2A2A38] text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition-all"
             >
-              <div className="w-10 h-10 rounded-xl bg-red-950/80 border border-red-800/80 flex items-center justify-center text-red-400 group-hover:scale-105 transition-transform">
-                <Upload className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-xs font-bold text-white block font-display">Drop Screenshot / Art</span>
-                <span className="text-[11px] text-[#8B8BA8]">Flyer, visual or image</span>
-              </div>
+              <Wand2 className="w-3.5 h-3.5 text-red-400" />
+              <span>{showWizard ? 'Hide Brand Setup' : 'Recalibrate Brand'}</span>
             </button>
-
             <button
-              onClick={() => onNavigateToStudio('url')}
-              className="group flex items-center gap-3 p-3.5 rounded-2xl bg-[#18181F] border border-[#2A2A38] hover:border-red-500/80 hover:bg-[#1C1C26] transition-all text-left shadow-lg"
+              onClick={onCreateCampaign}
+              className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-red-950/40 transition-all"
             >
-              <div className="w-10 h-10 rounded-xl bg-blue-950/80 border border-blue-800/80 flex items-center justify-center text-blue-400 group-hover:scale-105 transition-transform">
-                <Link2 className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-xs font-bold text-white block font-display">Ingest Link or URL</span>
-                <span className="text-[11px] text-[#8B8BA8]">Landing page, article, offer</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => onNavigateToTab('video_studio')}
-              className="group flex items-center gap-3 p-3.5 rounded-2xl bg-[#18181F] border border-[#2A2A38] hover:border-cyan-500/80 hover:bg-[#1C1C26] transition-all text-left shadow-lg"
-            >
-              <div className="w-10 h-10 rounded-xl bg-cyan-950/80 border border-cyan-800/80 flex items-center justify-center text-cyan-400 group-hover:scale-105 transition-transform">
-                <Video className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-xs font-bold text-white block font-display">Script 3-Beat Video</span>
-                <span className="text-[11px] text-[#8B8BA8]">Reels, TikTok &amp; Shorts</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => onNavigateToTab('scheduler')}
-              className="group flex items-center gap-3 p-3.5 rounded-2xl bg-[#18181F] border border-[#2A2A38] hover:border-emerald-500/80 hover:bg-[#1C1C26] transition-all text-left shadow-lg"
-            >
-              <div className="w-10 h-10 rounded-xl bg-emerald-950/80 border border-emerald-800/80 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform">
-                <Calendar className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-xs font-bold text-white block font-display">Review Smart Queue</span>
-                <span className="text-[11px] text-[#8B8BA8]">{scheduledCount} posts queued</span>
-              </div>
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Campaign</span>
             </button>
           </div>
         </div>
-      </div>
 
-      {/* Metric Cards — Clean Editorial Numbers */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-[#111116] border border-[#1F1F2A] hover:border-[#2A2A38] transition-all">
-          <div className="flex items-center justify-between text-[#8B8BA8] text-xs font-medium">
-            <span>Ready in Queue</span>
-            <Calendar className="w-4 h-4 text-purple-400" />
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold text-white font-display stat-num">
-              {scheduledCount}
-            </span>
-            <span className="text-xs text-emerald-400 font-semibold font-mono">Dispatched on Peak</span>
-          </div>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-[#111116] border border-[#1F1F2A] hover:border-[#2A2A38] transition-all">
-          <div className="flex items-center justify-between text-[#8B8BA8] text-xs font-medium">
-            <span>A/B Experiments</span>
-            <GitBranch className="w-4 h-4 text-red-400" />
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold text-white font-display stat-num">
-              {runningTests} Active
-            </span>
-            <span className="text-xs text-red-400 font-semibold font-mono">62.4% Lift</span>
-          </div>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-[#111116] border border-[#1F1F2A] hover:border-[#2A2A38] transition-all">
-          <div className="flex items-center justify-between text-[#8B8BA8] text-xs font-medium">
-            <span>Organic Reach</span>
-            <TrendingUp className="w-4 h-4 text-cyan-400" />
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold text-white font-display stat-num">
-              74.2K
-            </span>
-            <span className="text-xs text-cyan-400 font-semibold font-mono">+34% vs Last Wk</span>
-          </div>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-[#111116] border border-[#1F1F2A] hover:border-[#2A2A38] transition-all">
-          <div className="flex items-center justify-between text-[#8B8BA8] text-xs font-medium">
-            <span>Fan Resonance Match</span>
-            <Sparkles className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold text-white font-display stat-num">
-              96%
-            </span>
-            <span className="text-xs text-amber-400 font-semibold font-mono">Top Persona</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Grid: Active Queue Preview + Target Audience Personas */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left 2 Cols: Content Queue & Scheduled Deliveries */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-red-500" />
-              <h2 className="text-base font-bold text-white uppercase tracking-wider font-display">
-                Automated Content Pipeline
-              </h2>
-            </div>
-            <button
-              onClick={() => onNavigateToTab('scheduler')}
-              className="text-xs text-red-400 hover:text-red-300 font-medium flex items-center gap-1"
-            >
-              Open Full Scheduler <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {posts.slice(0, 4).map((post) => (
-              <div
-                key={post.id}
-                className="p-4 rounded-2xl bg-[#111116] border border-[#1F1F2A] hover:border-[#2A2A38] transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {workflowSteps.map((step) => {
+            const Icon = step.icon;
+            return (
+              <button
+                key={step.num}
+                onClick={() => onNavigateToTab(step.tab)}
+                className="group p-4 rounded-2xl bg-[#111116] border border-[#1F1F2A] hover:border-[#2A2A38] hover:bg-[#15151C] transition-all text-left flex flex-col justify-between gap-3"
               >
-                <div className="flex items-start gap-3.5 min-w-0">
-                  {post.mediaUrl ? (
-                    <img
-                      src={post.mediaUrl}
-                      alt="Post visual"
-                      className="w-14 h-14 rounded-xl object-cover shrink-0 border border-[#2A2A38]"
-                    />
-                  ) : (
-                    <div className="w-14 h-14 rounded-xl bg-[#18181F] border border-[#2A2A38] flex items-center justify-center shrink-0 text-red-400">
-                      <Sparkles className="w-5 h-5" />
-                    </div>
-                  )}
-
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-slate-300">
-                        {post.platform}
-                      </span>
-                      <span className="text-xs font-semibold text-red-400 truncate">
-                        {post.hookAngle}
-                      </span>
-                    </div>
-                    <p className="text-xs text-[#8B8BA8] line-clamp-2 pr-2">
-                      {post.content}
-                    </p>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#0A0A0C] border border-[#1F1F2A] text-red-400">
+                      STEP {step.num}
+                    </span>
+                    <Icon className={`w-4 h-4 ${step.accent}`} />
                   </div>
+                  {step.done ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <ArrowRight className="w-3.5 h-3.5 text-[#52526B] group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                  )}
                 </div>
+                <div>
+                  <div className="text-sm font-bold text-white">{step.title}</div>
+                  <div className="text-[11px] text-[#8B8BA8] mt-0.5 truncate">{step.status}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-                <div className="flex items-center sm:flex-col sm:items-end justify-between shrink-0 gap-1 border-t sm:border-t-0 border-[#1F1F2A] pt-2 sm:pt-0">
-                  <span className="text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded-md font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60">
+      {/* First-Run / Quick Brand & Audience Calibration Wizard */}
+      {showWizard && (
+        <BrandSetupWizard
+          brandProfile={brandProfile}
+          compact
+          onCompleteSetup={(updatedBrand, discoveredAvatars, goToCampaigns) => {
+            setIsBrandConfigured(true);
+            setShowWizard(false);
+            onCompleteBrandSetup(updatedBrand, discoveredAvatars, goToCampaigns);
+          }}
+          showNotificationToast={showNotificationToast}
+        />
+      )}
+
+      {/* Main Workspace Grid: Saved Campaigns (Left 2 cols) + Target Audience Demographics (Right col) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left 2 Cols: Real Campaign Projects + Upcoming Delivery */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Active Campaigns */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FolderKanban className="w-4 h-4 text-red-500" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Your Campaigns ({campaigns.length})
+                </h3>
+              </div>
+              <button
+                onClick={onCreateCampaign}
+                className="text-xs text-red-400 hover:text-red-300 font-semibold flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" /> Create Campaign
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {campaigns.map((camp) => {
+                const campPostsCount = posts.filter((p) => p.campaignId === camp.id).length;
+                return (
+                  <div
+                    key={camp.id}
+                    onClick={() => onOpenCampaign(camp.id)}
+                    className="p-4 rounded-2xl bg-[#111116] border border-[#1F1F2A] hover:border-red-500/60 transition-all cursor-pointer group flex flex-col justify-between gap-3"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
+                            camp.status === 'active'
+                              ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60'
+                              : 'bg-slate-900 text-slate-300 border-slate-700'
+                          }`}
+                        >
+                          {camp.status}
+                        </span>
+                        <span className="text-[10px] text-[#52526B] font-mono">
+                          {campPostsCount} scheduled asset{campPostsCount === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-white group-hover:text-red-400 transition-colors line-clamp-1">
+                        {camp.title}
+                      </h4>
+                      <p className="text-[11px] text-[#8B8BA8] line-clamp-2 leading-relaxed">
+                        {camp.goal}
+                      </p>
+                    </div>
+
+                    <div className="pt-2.5 border-t border-[#1F1F2A] flex items-center justify-between text-[11px]">
+                      <span className="text-[#52526B] truncate max-w-[160px]">{camp.theme}</span>
+                      <span className="text-red-400 font-semibold flex items-center gap-1 shrink-0 group-hover:translate-x-0.5 transition-transform">
+                        Open Studio <ChevronRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Upcoming Distribution Queue */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Upcoming Distribution Queue
+                </h3>
+              </div>
+              <button
+                onClick={() => onNavigateToTab('distribution')}
+                className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1"
+              >
+                Open Distribution <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              {posts.slice(0, 3).map((post) => (
+                <div
+                  key={post.id}
+                  onClick={() => onNavigateToTab('distribution')}
+                  className="p-3.5 rounded-2xl bg-[#111116] border border-[#1F1F2A] hover:border-[#2A2A38] transition-all flex items-center justify-between gap-3 cursor-pointer"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {post.mediaUrl ? (
+                      <img
+                        src={post.mediaUrl}
+                        alt="Post visual"
+                        className="w-11 h-11 rounded-xl object-cover shrink-0 border border-[#2A2A38]"
+                      />
+                    ) : (
+                      <div className="w-11 h-11 rounded-xl bg-[#18181F] border border-[#2A2A38] flex items-center justify-center shrink-0 text-red-400">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
+                          {post.platform}
+                        </span>
+                        <span className="text-xs font-semibold text-white truncate">
+                          {post.hookAngle}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#8B8BA8] line-clamp-1 mt-0.5">{post.content}</p>
+                    </div>
+                  </div>
+
+                  <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 shrink-0">
                     {post.status}
                   </span>
-                  <span className="text-[11px] text-[#52526B] font-mono">
-                    {post.scheduledTime ? new Date(post.scheduledTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Auto-Peak'}
-                  </span>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Right Col: Calibrated Fan Avatars & Rapid Switcher */}
+        {/* Right Col: Brand Brain & Audience Demographics */}
         <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-[#111116] border border-[#1F1F2A] space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-red-400" />
+                Active Brand Brain
+              </span>
+              <button
+                onClick={() => onNavigateToTab('brand_avatar')}
+                className="text-[11px] text-red-400 hover:text-red-300 font-semibold"
+              >
+                Edit →
+              </button>
+            </div>
+            <div>
+              <div className="text-sm font-extrabold text-white">{brandProfile.name}</div>
+              <div className="text-[11px] text-[#8B8BA8]">
+                {brandProfile.targetIndustry} · {brandProfile.archetype}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {brandProfile.voiceAttributes.slice(0, 4).map((attr) => (
+                <span
+                  key={attr}
+                  className="text-[10px] px-2 py-0.5 rounded-md bg-[#0A0A0C] border border-[#2A2A38] text-slate-300"
+                >
+                  {attr}
+                </span>
+              ))}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              <h2 className="text-base font-bold text-white uppercase tracking-wider font-display">
-                Audience Personas
-              </h2>
+              <Users className="w-4 h-4 text-amber-400" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                Target Demographics
+              </h3>
             </div>
             <button
               onClick={() => onNavigateToTab('brand_avatar')}
@@ -280,63 +362,53 @@ export default function HomeDashboard({
                 key={av.id}
                 onClick={() => {
                   onSelectAvatar(av);
-                  onNavigateToStudio();
+                  onNavigateToStudio('screenshot');
                 }}
-                className="p-4 rounded-2xl bg-[#111116] border border-[#1F1F2A] hover:border-amber-500/60 transition-all cursor-pointer group"
+                className="p-3.5 rounded-2xl bg-[#111116] border border-[#1F1F2A] hover:border-amber-500/60 transition-all cursor-pointer group space-y-2"
               >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2.5">
-                    {av.avatarImageUrl ? (
-                      <img
-                        src={av.avatarImageUrl}
-                        alt={av.name}
-                        className="w-9 h-9 rounded-full object-cover border border-[#2A2A38]"
-                      />
-                    ) : (
-                      <div className="w-9 h-9 rounded-full bg-amber-950/60 border border-amber-800/60 text-amber-400 flex items-center justify-center font-bold text-xs">
-                        {av.name.charAt(0)}
-                      </div>
-                    )}
-                    <div>
-                      <h3 className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <img
+                      src={av.avatarImageUrl}
+                      alt={av.name}
+                      className="w-9 h-9 rounded-full object-cover border border-[#2A2A38] shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold text-white group-hover:text-amber-300 truncate">
                         {av.name}
-                      </h3>
-                      <span className="text-[10px] text-[#8B8BA8] block truncate max-w-[150px]">
-                        {av.roleTitle}
+                      </h4>
+                      <span className="text-[10px] text-[#8B8BA8] block truncate">
+                        {av.roleTitle} · Ages {av.demographics?.ageRange || '24–40'}
                       </span>
                     </div>
                   </div>
-
-                  <span className="text-xs font-mono font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-800/60">
-                    {av.matchScore || 95}% Match
+                  <span className="text-[10px] font-mono font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-800/60 shrink-0">
+                    {av.matchScore || 95}%
                   </span>
                 </div>
 
-                <p className="text-[11px] text-[#8B8BA8] line-clamp-2 mt-2 leading-relaxed">
-                  Friction: {av.painPoints[0] || 'Inconsistent posting rhythm'}
+                {av.demographics?.geographicRegion && (
+                  <div className="text-[10px] text-blue-300/90 flex items-center gap-1 truncate">
+                    <MapPin className="w-3 h-3 shrink-0" />
+                    <span className="truncate">{av.demographics.geographicRegion}</span>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-[#8B8BA8] line-clamp-2 leading-relaxed">
+                  {av.painPoints[0] || 'Looking for authentic, high-signal content'}
                 </p>
 
-                <div className="mt-3 pt-2.5 border-t border-[#1F1F2A] flex items-center justify-between text-[10px] text-amber-400 font-semibold group-hover:translate-x-0.5 transition-transform">
-                  <span>Create tailored post →</span>
-                  <span className="uppercase text-[#52526B] font-mono">{av.preferredPlatforms.join(', ')}</span>
+                <div className="pt-2 border-t border-[#1F1F2A] flex items-center justify-between text-[10px] text-amber-400 font-semibold">
+                  <span>Build campaign for {av.name.split(' ')[0]} →</span>
+                  <span className="uppercase text-[#52526B] font-mono">
+                    {av.preferredPlatforms.slice(0, 3).join(' · ')}
+                  </span>
                 </div>
               </div>
             ))}
           </div>
-
-          {/* Quick Tip on Agnostic Core */}
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-red-950/20 to-transparent border border-red-900/30 text-xs text-[#8B8BA8] space-y-1.5">
-            <span className="text-red-400 font-bold block flex items-center gap-1.5 font-display">
-              <Zap className="w-3.5 h-3.5" /> BE-Agnostic LLM Engine
-            </span>
-            <p className="text-[11px] leading-relaxed">
-              Switch seamlessly between Gemini, OpenAI GPT-4o, Anthropic Claude, or private local LLMs via Ollama/Groq in your <code className="text-slate-300">.env</code>.
-            </p>
-          </div>
         </div>
-
       </div>
-
     </div>
   );
 }

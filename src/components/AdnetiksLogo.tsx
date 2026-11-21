@@ -25,7 +25,7 @@ export default function AdnetiksLogo({ className = 'w-8 h-8', size }: AdnetiksLo
     >
       <defs>
         {/* Soft shadow for depth */}
-        <filter id="adnetiks-shadow" x="-20%" y="-20%" width="150%" height="150%">
+        <filter id="adnetiks-shadow" filterUnits="userSpaceOnUse" x="-10" y="-10" width="120" height="120">
           <feDropShadow dx="1.5" dy="2.5" stdDeviation="2.5" floodColor="#7f1d1d" floodOpacity="0.45" />
         </filter>
 

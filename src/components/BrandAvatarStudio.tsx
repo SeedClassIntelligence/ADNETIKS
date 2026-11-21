@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 import { BrandProfile, CustomerAvatar, BrandArchetype, SocialPlatform } from '../types';
+import BrandSetupWizard from './BrandSetupWizard';
 import {
   Sparkles,
   Sliders,
@@ -17,6 +18,7 @@ import {
   HelpCircle,
   Layers,
   ArrowRight,
+  Wand2,
 } from 'lucide-react';
 
 interface BrandAvatarStudioProps {
@@ -25,6 +27,12 @@ interface BrandAvatarStudioProps {
   avatars: CustomerAvatar[];
   setAvatars: (avatars: CustomerAvatar[]) => void;
   onSelectAvatarForCampaign?: (avatar: CustomerAvatar) => void;
+  onCompleteBrandSetup?: (
+    updatedBrand: BrandProfile,
+    discoveredAvatars: CustomerAvatar[],
+    goToCampaigns?: boolean
+  ) => void;
+  showNotificationToast?: (title: string, message: string) => void;
   userRole: string;
 }
 
@@ -34,9 +42,14 @@ export default function BrandAvatarStudio({
   avatars,
   setAvatars,
   onSelectAvatarForCampaign,
+  onCompleteBrandSetup,
+  showNotificationToast,
   userRole,
 }: BrandAvatarStudioProps) {
-  const [activeSection, setActiveSection] = useState<'brand' | 'avatars' | 'receptivity'>('brand');
+  const [activeSection, setActiveSection] = useState<'setup' | 'brand' | 'avatars' | 'receptivity'>(() => {
+    const configured = typeof window !== 'undefined' && localStorage.getItem('adnetiks_brand_configured') === 'true';
+    return configured ? 'avatars' : 'setup';
+  });
   const [newAttribute, setNewAttribute] = useState('');
   const [newBannedWord, setNewBannedWord] = useState('');
   const [newPillar, setNewPillar] = useState('');
@@ -162,19 +175,28 @@ export default function BrandAvatarStudio({
     <div className="space-y-6">
       
       {/* Studio Header & Sub-Navigation */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-red-500" />
-            Brand Identity & Customer Avatar Intelligence
+            Brand Brain &amp; Audience Demographics
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Ground all AI copy generation in immutable brand pillars and psycho-demographic audience receptivity.
+            Step 1 of your workflow: calibrate who you are and who you&apos;re talking to before crafting any campaign message.
           </p>
         </div>
 
         {/* Section Tabs */}
-        <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 self-start lg:self-auto">
+          <button
+            onClick={() => setActiveSection('setup')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
+              activeSection === 'setup' ? 'bg-red-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Wand2 className="w-3.5 h-3.5" />
+            Quick Brand Setup
+          </button>
           <button
             onClick={() => setActiveSection('brand')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
@@ -182,7 +204,7 @@ export default function BrandAvatarStudio({
             }`}
           >
             <Sliders className="w-3.5 h-3.5 text-red-400" />
-            Brand Voice & Rules
+            Brand Voice
           </button>
           <button
             onClick={() => setActiveSection('avatars')}
@@ -191,7 +213,7 @@ export default function BrandAvatarStudio({
             }`}
           >
             <Users className="w-3.5 h-3.5 text-blue-400" />
-            Customer Avatars ({avatars.length})
+            Demographics ({avatars.length})
           </button>
           <button
             onClick={() => setActiveSection('receptivity')}
@@ -200,10 +222,29 @@ export default function BrandAvatarStudio({
             }`}
           >
             <Target className="w-3.5 h-3.5 text-emerald-400" />
-            Receptivity Matcher
+            Message Test
           </button>
         </div>
       </div>
+
+      {/* SECTION 0: Guided Brand & Audience Demographic Calibration */}
+      {activeSection === 'setup' && (
+        <BrandSetupWizard
+          brandProfile={brandProfile}
+          onCompleteSetup={(updatedBrand, discoveredAvatars, goToCampaigns) => {
+            if (onCompleteBrandSetup) {
+              onCompleteBrandSetup(updatedBrand, discoveredAvatars, goToCampaigns);
+            } else {
+              setBrandProfile(updatedBrand);
+              if (discoveredAvatars.length > 0) setAvatars(discoveredAvatars);
+            }
+            if (!goToCampaigns) {
+              setActiveSection('avatars');
+            }
+          }}
+          showNotificationToast={showNotificationToast || (() => {})}
+        />
+      )}
 
       {/* SECTION 1: Brand Voice & Rules */}
       {activeSection === 'brand' && (

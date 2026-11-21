@@ -115,6 +115,11 @@ export default function App() {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
 
+  // Active Campaign Project & Sub-Pillar Tabs
+  const [activeCampaignId, setActiveCampaignId] = useState<string>(() => campaigns[0]?.id || 'camp-q4-surge');
+  const [distributionSubTab, setDistributionSubTab] = useState<'queue' | 'ab_lab'>('queue');
+  const [signalsSubTab, setSignalsSubTab] = useState<'analytics' | 'inbox'>('analytics');
+
   // Active Hero Video Asset Plugged Into Campaign Builder (AI Generated, Recorded, or Uploaded)
   const [attachedCampaignVideo, setAttachedCampaignVideo] = useState<CampaignVideoAsset | null>(null);
   const [studioInitialFormat, setStudioInitialFormat] = useState<'social_post' | 'sponsored_ad' | 'short_video' | 'carousel' | undefined>(undefined);
@@ -126,6 +131,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('adnetiks_user_role', userRole);
   }, [userRole]);
+
+  useEffect(() => {
+    localStorage.setItem('adnetiks_campaigns', JSON.stringify(campaigns));
+  }, [campaigns]);
 
   useEffect(() => {
     localStorage.setItem('adnetiks_brand_profile', JSON.stringify(brandProfile));
@@ -269,6 +278,81 @@ export default function App() {
     setActiveTab('scheduler');
   };
 
+  // Unified Navigation Helper (maps legacy tab names cleanly into the 4 pillars)
+  const handleNavigateTab = (tab: string) => {
+    if (tab === 'scheduler') {
+      setDistributionSubTab('queue');
+      setActiveTab('distribution');
+      return;
+    }
+    if (tab === 'split_lab') {
+      setDistributionSubTab('ab_lab');
+      setActiveTab('distribution');
+      return;
+    }
+    if (tab === 'analytics') {
+      setSignalsSubTab('analytics');
+      setActiveTab('signals');
+      return;
+    }
+    if (tab === 'service_agents') {
+      setSignalsSubTab('inbox');
+      setActiveTab('signals');
+      return;
+    }
+    setActiveTab(tab);
+  };
+
+  // Create Real Saved Campaign Project
+  const handleCreateCampaign = () => {
+    const newId = `camp-${Date.now()}`;
+    const newCamp: Campaign = {
+      id: newId,
+      title: `${brandProfile.name} Campaign #${campaigns.length + 1}`,
+      brandProfileId: brandProfile.id,
+      targetAvatarIds: selectedAvatar ? [selectedAvatar.id] : [],
+      goal: `Engage ${selectedAvatar?.name || 'core audience'} across priority social channels`,
+      theme: brandProfile.valuePillars[0] || 'Multi-Channel Launch',
+      sourceType: 'url',
+      sourceInput: '',
+      keyTakeaways: [],
+      status: 'active',
+      receptivityScores: {},
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+    setCampaigns((prev) => [newCamp, ...prev]);
+    setActiveCampaignId(newId);
+    setStudioSourceMode('screenshot');
+    setStudioInitialFormat(undefined);
+    setActiveTab('studio');
+    showNotificationToast('New Campaign Created', `Created "${newCamp.title}" in Campaign Studio.`);
+  };
+
+  const handleOpenCampaign = (campaignId: string) => {
+    setActiveCampaignId(campaignId);
+    setActiveTab('studio');
+  };
+
+  const handleUpdateCampaignTitle = (campaignId: string, title: string) => {
+    setCampaigns((prev) => prev.map((c) => (c.id === campaignId ? { ...c, title } : c)));
+  };
+
+  // Complete Brand & Demographic Calibration Wizard
+  const handleCompleteBrandSetup = (
+    updatedBrand: BrandProfile,
+    discoveredAvatars: CustomerAvatar[],
+    goToCampaigns?: boolean
+  ) => {
+    setBrandProfile(updatedBrand);
+    if (discoveredAvatars.length > 0) {
+      setAvatars(discoveredAvatars);
+      setSelectedAvatar(discoveredAvatars[0]);
+    }
+    if (goToCampaigns) {
+      setActiveTab('studio');
+    }
+  };
+
   // Plug Video Asset from Video Studio directly into Campaign Builder
   const handlePlugVideoIntoCampaign = (video: CampaignVideoAsset) => {
     setAttachedCampaignVideo(video);
@@ -288,72 +372,64 @@ export default function App() {
   };
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+  const scheduledCount = posts.filter((p) => p.status === 'scheduled' || p.status === 'approved').length;
+  const activeCampaignTitle = campaigns.find((c) => c.id === activeCampaignId)?.title;
 
   return (
     <div className={`min-h-screen flex flex-row ${isDark ? 'dark bg-[#0A0A0C] text-[#E5E5F0]' : 'bg-slate-50 text-slate-900'}`}>
       
-      {/* Left Collapsible Studio Dock / Sidebar */}
+      {/* Left Collapsible 4-Pillar Navigation Rail */}
       <Sidebar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleNavigateTab}
         currentRole={userRole}
-        onNewCampaignClick={() => handleNavigateToStudio('screenshot')}
+        onNewCampaignClick={handleCreateCampaign}
+        brandName={brandProfile.name}
+        scheduledCount={scheduledCount}
+        campaignCount={campaigns.length}
       />
 
       {/* Main Workspace Frame */}
       <div className="flex-1 flex flex-col min-w-0 pl-16 lg:pl-0">
         
-        {/* Top Header */}
+        {/* Minimal Contextual Studio Header */}
         <TopNav
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={handleNavigateTab}
           currentRole={userRole}
           setCurrentRole={setUserRole}
           unreadCount={unreadCount}
           openNotifications={() => setIsNotificationDrawerOpen(true)}
           isDark={isDark}
           toggleTheme={toggleTheme}
-          onNewCampaignClick={() => handleNavigateToStudio('screenshot')}
+          onNewCampaignClick={handleCreateCampaign}
+          brandName={brandProfile.name}
+          brandArchetype={brandProfile.archetype}
+          activeCampaignTitle={activeCampaignTitle}
         />
 
         {/* Dynamic Tab Content Area */}
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
           
-          {/* 1. Command Hub / Home Dashboard */}
+          {/* Workspace Overview */}
           {activeTab === 'home' && (
             <HomeDashboard
+              brandProfile={brandProfile}
               campaigns={campaigns}
               posts={posts}
               splitTests={splitTests}
               avatars={avatars}
               onNavigateToStudio={handleNavigateToStudio}
-              onNavigateToTab={setActiveTab}
+              onNavigateToTab={handleNavigateTab}
               onSelectAvatar={(av) => setSelectedAvatar(av)}
-            />
-          )}
-
-          {/* 2. Creative Studio & Content Ingestion (Screenshot / URL / Brief) */}
-          {activeTab === 'studio' && (
-            <ContentStudio
-              brandProfile={brandProfile}
-              avatars={avatars}
-              setAvatars={setAvatars}
-              selectedAvatar={selectedAvatar}
-              setSelectedAvatar={setSelectedAvatar}
-              onSaveToQueue={handleSaveToQueue}
-              onLaunchSplitTest={handleLaunchSplitTest}
-              userRole={userRole}
+              onOpenCampaign={handleOpenCampaign}
+              onCreateCampaign={handleCreateCampaign}
+              onCompleteBrandSetup={handleCompleteBrandSetup}
               showNotificationToast={showNotificationToast}
-              preloadedTheme={preloadedTheme}
-              onClearPreloadedTheme={() => setPreloadedTheme(null)}
-              initialSourceMode={studioSourceMode}
-              initialFormat={studioInitialFormat}
-              attachedVideo={attachedCampaignVideo}
-              onAttachVideo={setAttachedCampaignVideo}
             />
           )}
 
-          {/* 3. Brand & Audience Avatar Intelligence */}
+          {/* PILLAR 1: Brand Brain & Audience Demographics */}
           {activeTab === 'brand_avatar' && (
             <BrandAvatarStudio
               brandProfile={brandProfile}
@@ -364,22 +440,43 @@ export default function App() {
                 setSelectedAvatar(av);
                 setActiveTab('studio');
               }}
+              onCompleteBrandSetup={handleCompleteBrandSetup}
+              showNotificationToast={showNotificationToast}
               userRole={userRole}
             />
           )}
 
-          {/* 4. Autonomous Fan Service & Inbound DM / Mention Listening */}
-          {activeTab === 'service_agents' && (
-            <ServiceOrchestrator
-              mentions={mentions}
-              setMentions={setMentions}
-              onConvertUgcToPost={handleConvertUgcToPost}
+          {/* PILLAR 2: Campaigns (Projects + Guided Studio + AI/Recorded Video) */}
+          {activeTab === 'studio' && (
+            <ContentStudio
+              brandProfile={brandProfile}
+              avatars={avatars}
+              setAvatars={setAvatars}
+              selectedAvatar={selectedAvatar}
+              setSelectedAvatar={setSelectedAvatar}
+              onSaveToQueue={handleSaveToQueue}
+              onLaunchSplitTest={(exp) => {
+                handleLaunchSplitTest(exp);
+                setDistributionSubTab('ab_lab');
+                setActiveTab('distribution');
+              }}
               userRole={userRole}
               showNotificationToast={showNotificationToast}
+              preloadedTheme={preloadedTheme}
+              onClearPreloadedTheme={() => setPreloadedTheme(null)}
+              initialSourceMode={studioSourceMode}
+              initialFormat={studioInitialFormat}
+              attachedVideo={attachedCampaignVideo}
+              onAttachVideo={setAttachedCampaignVideo}
+              campaigns={campaigns}
+              activeCampaignId={activeCampaignId}
+              onSelectCampaign={setActiveCampaignId}
+              onCreateCampaign={handleCreateCampaign}
+              onUpdateCampaignTitle={handleUpdateCampaignTitle}
             />
           )}
 
-          {/* 5. ADNETIKS Video Studio (Shorts, Reels, TikTok, X) */}
+          {/* Standalone Video Studio (still accessible if linked directly) */}
           {activeTab === 'video_studio' && (
             <AdnetiksVideoStudio
               trendingSounds={trendingSounds}
@@ -392,41 +489,120 @@ export default function App() {
             />
           )}
 
-          {/* 6. A/B Split Testing Laboratory */}
-          {activeTab === 'split_lab' && (
-            <SplitTestLab
-              splitTests={splitTests}
-              onDeclareWinner={handleDeclareWinner}
-              userRole={userRole}
-              showNotificationToast={showNotificationToast}
-            />
+          {/* PILLAR 3: Distribution (Unified Smart Calendar Queue + A/B Split Lab) */}
+          {(activeTab === 'distribution' || activeTab === 'scheduler' || activeTab === 'split_lab') && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1F1F2A] pb-4">
+                <div>
+                  <h2 className="text-lg font-extrabold text-white tracking-tight">
+                    Distribution &amp; Hook Experiments
+                  </h2>
+                  <p className="text-xs text-[#8B8BA8]">
+                    Manage your automated multi-platform publishing queue and live A/B hook tests in one place.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 bg-[#111116] p-1 rounded-xl border border-[#1F1F2A] self-start sm:self-auto">
+                  <button
+                    onClick={() => setDistributionSubTab('queue')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      distributionSubTab === 'queue'
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'text-[#8B8BA8] hover:text-white'
+                    }`}
+                  >
+                    Calendar &amp; Queue ({posts.length})
+                  </button>
+                  <button
+                    onClick={() => setDistributionSubTab('ab_lab')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      distributionSubTab === 'ab_lab'
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'text-[#8B8BA8] hover:text-white'
+                    }`}
+                  >
+                    A/B Hook Lab ({splitTests.length})
+                  </button>
+                </div>
+              </div>
+
+              {distributionSubTab === 'queue' ? (
+                <SmartScheduler
+                  posts={posts}
+                  setPosts={setPosts}
+                  userRole={userRole}
+                  showNotificationToast={showNotificationToast}
+                />
+              ) : (
+                <SplitTestLab
+                  splitTests={splitTests}
+                  onDeclareWinner={handleDeclareWinner}
+                  userRole={userRole}
+                  showNotificationToast={showNotificationToast}
+                />
+              )}
+            </div>
           )}
 
-          {/* 7. Smart AI Scheduler & Automated Queue */}
-          {activeTab === 'scheduler' && (
-            <SmartScheduler
-              posts={posts}
-              setPosts={setPosts}
-              userRole={userRole}
-              showNotificationToast={showNotificationToast}
-            />
+          {/* PILLAR 4: Signals & Inbox (Unified Growth Analytics + Fan Engagement) */}
+          {(activeTab === 'signals' || activeTab === 'analytics' || activeTab === 'service_agents') && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1F1F2A] pb-4">
+                <div>
+                  <h2 className="text-lg font-extrabold text-white tracking-tight">
+                    Audience Signals &amp; Engagement Inbox
+                  </h2>
+                  <p className="text-xs text-[#8B8BA8]">
+                    Track what converts, deploy rising trends into Campaigns, and resolve fan/customer replies in your brand voice.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 bg-[#111116] p-1 rounded-xl border border-[#1F1F2A] self-start sm:self-auto">
+                  <button
+                    onClick={() => setSignalsSubTab('analytics')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      signalsSubTab === 'analytics'
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'text-[#8B8BA8] hover:text-white'
+                    }`}
+                  >
+                    Growth &amp; Trends
+                  </button>
+                  <button
+                    onClick={() => setSignalsSubTab('inbox')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      signalsSubTab === 'inbox'
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'text-[#8B8BA8] hover:text-white'
+                    }`}
+                  >
+                    Fan &amp; DM Inbox ({mentions.length})
+                  </button>
+                </div>
+              </div>
+
+              {signalsSubTab === 'analytics' ? (
+                <AnalyticsDashboard
+                  posts={posts}
+                  heatmapData={heatmapData}
+                  competitors={competitors}
+                  setCompetitors={setCompetitors}
+                  onOpenReportModal={() => setIsReportModalOpen(true)}
+                  onSendToRemixStudio={handleSendToRemixStudio}
+                  onDeployTrendingTheme={handleDeployTrendingTheme}
+                  showNotificationToast={showNotificationToast}
+                />
+              ) : (
+                <ServiceOrchestrator
+                  mentions={mentions}
+                  setMentions={setMentions}
+                  onConvertUgcToPost={handleConvertUgcToPost}
+                  userRole={userRole}
+                  showNotificationToast={showNotificationToast}
+                />
+              )}
+            </div>
           )}
 
-          {/* 8. Growth & Performance Analytics */}
-          {activeTab === 'analytics' && (
-            <AnalyticsDashboard
-              posts={posts}
-              heatmapData={heatmapData}
-              competitors={competitors}
-              setCompetitors={setCompetitors}
-              onOpenReportModal={() => setIsReportModalOpen(true)}
-              onSendToRemixStudio={handleSendToRemixStudio}
-              onDeployTrendingTheme={handleDeployTrendingTheme}
-              showNotificationToast={showNotificationToast}
-            />
-          )}
-
-          {/* 9. Integrations & Connector Hub */}
+          {/* AI Engines & Social Connectors */}
           {activeTab === 'integrations' && (
             <IntegrationsHub showNotificationToast={showNotificationToast} />
           )}

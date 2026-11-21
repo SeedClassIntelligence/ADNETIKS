@@ -1,12 +1,12 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * ADNETIKS Studio Top Header
- * Follows Top Bar Contract: Brand Symbol & Context - Nav Links - Actions & RBAC
+ * ADNETIKS Minimal Contextual Studio Header
+ * Displays active workflow pillar, active Brand Brain pill, RBAC switcher, and primary CTA.
+ * Navigation lives in one place (Sidebar) — eliminating competing duplicate nav bars.
  */
 
 import { useState } from 'react';
-import AdnetiksLogo from './AdnetiksLogo';
 import { UserRole } from '../types';
 import {
   Bell,
@@ -16,7 +16,8 @@ import {
   User,
   Plus,
   CheckCircle2,
-  Sparkles,
+  ChevronRight,
+  Users,
 } from 'lucide-react';
 
 interface TopNavProps {
@@ -29,6 +30,9 @@ interface TopNavProps {
   isDark: boolean;
   toggleTheme: () => void;
   onNewCampaignClick: () => void;
+  brandName?: string;
+  brandArchetype?: string;
+  activeCampaignTitle?: string;
 }
 
 export default function TopNav({
@@ -41,86 +45,85 @@ export default function TopNav({
   isDark,
   toggleTheme,
   onNewCampaignClick,
+  brandName = 'ADNETIKS',
+  brandArchetype = 'The Catalyst',
+  activeCampaignTitle,
 }: TopNavProps) {
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
 
   const roleLabels: Record<UserRole, { label: string; desc: string; badgeColor: string }> = {
-    admin: { label: 'Admin / Owner', desc: 'Full system control, approvals & publishing', badgeColor: 'text-red-400 bg-red-950/60 border-red-800/60' },
-    creator: { label: 'Content Creator', desc: 'Drafts campaigns, generates variants', badgeColor: 'text-blue-400 bg-blue-950/60 border-blue-800/60' },
-    approver: { label: 'Client Approver', desc: 'Reviews copy, approves schedules', badgeColor: 'text-amber-400 bg-amber-950/60 border-amber-800/60' },
-    analyst: { label: 'Data Analyst', desc: 'Read-only metrics, reports & heatmaps', badgeColor: 'text-emerald-400 bg-emerald-950/60 border-emerald-800/60' },
+    admin: { label: 'Owner', desc: 'Full control, brand calibration & publishing', badgeColor: 'text-red-400 bg-red-950/60 border-red-800/60' },
+    creator: { label: 'Creator', desc: 'Drafts campaigns & generates assets', badgeColor: 'text-blue-400 bg-blue-950/60 border-blue-800/60' },
+    approver: { label: 'Approver', desc: 'Reviews copy & approves schedule', badgeColor: 'text-amber-400 bg-amber-950/60 border-amber-800/60' },
+    analyst: { label: 'Analyst', desc: 'Read-only metrics & reports', badgeColor: 'text-emerald-400 bg-emerald-950/60 border-emerald-800/60' },
   };
 
-  const navItems = [
-    { id: 'home', label: 'Command Hub' },
-    { id: 'studio', label: 'Campaign Builder' },
-    { id: 'video_studio', label: 'Video Studio' },
-    { id: 'scheduler', label: 'Smart Queue' },
-    { id: 'split_lab', label: 'A/B Lab' },
-    { id: 'service_agents', label: 'Fan Engage' },
-    { id: 'brand_avatar', label: 'Brand & Voice' },
-    { id: 'analytics', label: 'Analytics' },
-    { id: 'integrations', label: 'Connect' },
-  ];
+  const pillarMeta: Record<string, { step?: string; title: string; subtitle: string }> = {
+    home: { title: 'Workspace Overview', subtitle: 'Brand Brain, Campaigns & Delivery at a glance' },
+    brand_avatar: { step: '01', title: 'Brand & Audience', subtitle: 'Voice identity, target demographics & buyer personas' },
+    studio: { step: '02', title: 'Campaign Studio', subtitle: activeCampaignTitle || 'Create display ads, posts, carousels & AI videos' },
+    video_studio: { step: '02', title: 'Campaign Studio · Video', subtitle: '9:16 AI Video & Camera Production' },
+    distribution: { step: '03', title: 'Distribution', subtitle: 'Smart Calendar Queue & A/B Hook Experiments' },
+    scheduler: { step: '03', title: 'Distribution', subtitle: 'Smart Calendar Queue & A/B Hook Experiments' },
+    split_lab: { step: '03', title: 'Distribution', subtitle: 'Smart Calendar Queue & A/B Hook Experiments' },
+    signals: { step: '04', title: 'Signals & Inbox', subtitle: 'Growth analytics, trends & fan engagement' },
+    analytics: { step: '04', title: 'Signals & Inbox', subtitle: 'Growth analytics, trends & fan engagement' },
+    service_agents: { step: '04', title: 'Signals & Inbox', subtitle: 'Growth analytics, trends & fan engagement' },
+    integrations: { title: 'AI Engines & Connectors', subtitle: 'Plug in any LLM, code assistant, or publishing channel' },
+  };
+
+  const currentMeta = pillarMeta[activeTab] || pillarMeta.home;
 
   return (
-    <header className="sticky top-0 z-30 w-full border-b border-[#1F1F2A] bg-[#0A0A0C]/90 backdrop-blur-md px-3 sm:px-6 py-2.5 transition-colors">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 md:gap-6">
-        
-        {/* Zone 1: Pure Brand Symbol */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <button
-            onClick={() => setActiveTab('home')}
-            className="flex items-center gap-2.5 group focus:outline-none p-1 transition-transform hover:scale-105"
-            title="ADNETIKS Command Hub"
-          >
-            <AdnetiksLogo size={30} />
-            <span className="text-sm font-black tracking-wider uppercase text-white font-display hidden sm:inline">
-              ADNETIKS
+    <header className="sticky top-0 z-30 w-full border-b border-[#1F1F2A] bg-[#0A0A0C]/90 backdrop-blur-md px-4 sm:px-6 h-16 flex items-center transition-colors">
+      <div className="max-w-7xl w-full mx-auto flex items-center justify-between gap-3">
+        {/* Left: Active Pillar Context Breadcrumb */}
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            {currentMeta.step && (
+              <span className="px-2 py-0.5 rounded-md bg-red-950/70 border border-red-800/60 text-red-300 text-[10px] font-mono font-bold shrink-0">
+                STEP {currentMeta.step}
+              </span>
+            )}
+            <h1 className="text-sm sm:text-base font-extrabold text-white tracking-tight whitespace-nowrap shrink-0">
+              {currentMeta.title}
+            </h1>
+            <ChevronRight className="w-3.5 h-3.5 text-[#52526B] hidden xl:block shrink-0" />
+            <span className="text-xs text-[#8B8BA8] truncate hidden xl:block max-w-sm">
+              {currentMeta.subtitle}
             </span>
-          </button>
+          </div>
         </div>
 
-        {/* Zone 2: Navigation Links (Single-Line, Studio Style) */}
-        <nav className="hidden md:flex items-center gap-1 xl:gap-1.5 overflow-x-auto scrollbar-none">
-          {navItems.map((item) => {
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-xl whitespace-nowrap transition-all shrink-0 ${
-                  isActive
-                    ? 'bg-[#18181F] text-red-400 border border-[#2A2A38] shadow-sm shadow-red-950/20'
-                    : 'text-[#8B8BA8] hover:text-white hover:bg-[#111116]'
-                }`}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Zone 3: Actions & Role-Based Access Control */}
+        {/* Right: Active Brand Pill + Role + Utilities + New Campaign CTA */}
         <div className="flex items-center gap-2 shrink-0">
-          
-          {/* Interactive Role Switcher */}
+          {/* Active Brand Brain Switcher Pill */}
+          <button
+            onClick={() => setActiveTab('brand_avatar')}
+            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#111116] hover:bg-[#18181F] border border-[#2A2A38] text-xs transition-all"
+            title="Edit your Brand Voice & Target Demographics"
+          >
+            <Users className="w-3.5 h-3.5 text-red-400" />
+            <span className="font-bold text-white max-w-[120px] truncate">{brandName}</span>
+            <span className="text-[10px] text-[#8B8BA8] hidden lg:inline">· {brandArchetype}</span>
+          </button>
+
+          {/* Compact Role Switcher */}
           <div className="relative">
             <button
               onClick={() => setRoleMenuOpen(!roleMenuOpen)}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-xl border transition-colors ${roleLabels[currentRole].badgeColor}`}
-              title="Switch user role to test RBAC permissions"
+              title="Switch workspace role"
             >
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{roleLabels[currentRole].label}</span>
-              <span className="sm:hidden capitalize">{currentRole}</span>
+              <span className="hidden md:inline">{roleLabels[currentRole].label}</span>
             </button>
 
             {roleMenuOpen && (
-              <div className="absolute right-0 mt-2 w-64 bg-[#111116] border border-[#2A2A38] rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in duration-150">
+              <div className="absolute right-0 mt-2 w-60 bg-[#111116] border border-[#2A2A38] rounded-2xl shadow-2xl p-2 z-50">
                 <div className="px-2.5 py-1.5 border-b border-[#1F1F2A] mb-1">
-                  <span className="text-[10px] font-bold text-[#8B8BA8] uppercase tracking-wider font-display">
-                    Role Permissions (RBAC)
+                  <span className="text-[10px] font-bold text-[#8B8BA8] uppercase tracking-wider">
+                    Workspace Role
                   </span>
                 </div>
                 {(Object.keys(roleLabels) as UserRole[]).map((role) => (
@@ -150,11 +153,11 @@ export default function TopNav({
             )}
           </div>
 
-          {/* Notifications Button with Push Counter */}
+          {/* Notifications */}
           <button
             onClick={openNotifications}
             className="relative p-2 text-[#8B8BA8] hover:text-white hover:bg-[#18181F] rounded-xl transition-colors border border-transparent hover:border-[#2A2A38]"
-            title="Notification Center & Alerts"
+            title="Notifications"
             aria-label="Open notifications"
           >
             <Bell className="w-4 h-4" />
@@ -163,7 +166,7 @@ export default function TopNav({
             )}
           </button>
 
-          {/* Theme Switcher */}
+          {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
             className="p-2 text-[#8B8BA8] hover:text-white hover:bg-[#18181F] rounded-xl transition-colors border border-transparent hover:border-[#2A2A38]"
@@ -173,42 +176,20 @@ export default function TopNav({
             {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
 
-          {/* Primary Action Button */}
+          {/* Primary CTA */}
           <button
             onClick={onNewCampaignClick}
             disabled={currentRole === 'analyst'}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl shadow-md transition-all whitespace-nowrap ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl shadow-md transition-all whitespace-nowrap ${
               currentRole === 'analyst'
                 ? 'bg-[#18181F] text-[#52526B] cursor-not-allowed opacity-60'
                 : 'bg-red-600 hover:bg-red-500 text-white shadow-red-950/40 active:scale-95'
             }`}
-            title={currentRole === 'analyst' ? 'Analysts have view-only access' : 'Create new social campaign'}
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>New Asset</span>
+            <span>New Campaign</span>
           </button>
-
         </div>
-      </div>
-
-      {/* Mobile Nav Scroller */}
-      <div className="md:hidden flex items-center gap-2 overflow-x-auto pt-2 pb-1 scrollbar-none border-t border-[#1F1F2A] mt-2">
-        {navItems.map((item) => {
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`px-3 py-1 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
-                isActive
-                  ? 'bg-red-600 text-white font-bold'
-                  : 'bg-[#111116] text-[#8B8BA8] hover:text-white'
-              }`}
-            >
-              {item.label}
-            </button>
-          );
-        })}
       </div>
     </header>
   );

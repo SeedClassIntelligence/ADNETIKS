@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   BrandProfile,
+  Campaign,
   CustomerAvatar,
   SocialPlatform,
   PostVariant,
@@ -102,6 +103,11 @@ interface ContentStudioProps {
   initialFormat?: MarketingFormatType;
   attachedVideo?: CampaignVideoAsset | null;
   onAttachVideo?: (video: CampaignVideoAsset | null) => void;
+  campaigns?: Campaign[];
+  activeCampaignId?: string;
+  onSelectCampaign?: (id: string) => void;
+  onCreateCampaign?: () => void;
+  onUpdateCampaignTitle?: (id: string, title: string) => void;
 }
 
 export default function ContentStudio({
@@ -120,9 +126,31 @@ export default function ContentStudio({
   initialFormat,
   attachedVideo,
   onAttachVideo,
+  campaigns = [],
+  activeCampaignId,
+  onSelectCampaign,
+  onCreateCampaign,
+  onUpdateCampaignTitle,
 }: ContentStudioProps) {
-  // Campaign Builder Metadata
-  const [campaignTitle, setCampaignTitle] = useState('Q4 Multi-Channel Audience Surge');
+  // Active Campaign Project & Focused Left-Column Stepper
+  const activeCampaignObj = campaigns.find((c) => c.id === activeCampaignId) || campaigns[0];
+  const [campaignTitle, setCampaignTitle] = useState(
+    activeCampaignObj?.title || `${brandProfile.name} — Multi-Channel Campaign`
+  );
+  const [builderStep, setBuilderStep] = useState<'offer' | 'audience' | 'launch'>('offer');
+
+  useEffect(() => {
+    if (activeCampaignObj?.title) {
+      setCampaignTitle(activeCampaignObj.title);
+    }
+  }, [activeCampaignObj?.id, activeCampaignObj?.title]);
+
+  const handleCampaignTitleChange = (val: string) => {
+    setCampaignTitle(val);
+    if (activeCampaignObj && onUpdateCampaignTitle) {
+      onUpdateCampaignTitle(activeCampaignObj.id, val);
+    }
+  };
 
   // Agnostic AI Engine / Code Assistant Plug-in State
   const [llmConfig, setLlmConfig] = useState<{
@@ -1377,7 +1405,7 @@ export default function ContentStudio({
       if (current) {
         posts.push({
           id: `post-${p}-a-${Date.now()}`,
-          campaignId: 'camp-q4-surge',
+          campaignId: activeCampaignObj?.id || 'camp-q4-surge',
           variantLabel: 'Variant A',
           formatType: selectedFormat,
           hookAngle: useVideo
@@ -1479,6 +1507,49 @@ export default function ContentStudio({
 
   return (
     <div className="space-y-6">
+      {/* CAMPAIGN PROJECTS SWITCHER BAR */}
+      {campaigns.length > 0 && (
+        <div className="flex items-center justify-between gap-2 pb-1">
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none min-w-0 flex-1">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-[#52526B] shrink-0">
+              Projects:
+            </span>
+            {campaigns.map((camp) => {
+              const isActive = camp.id === (activeCampaignObj?.id || activeCampaignId);
+              return (
+                <button
+                  key={camp.id}
+                  type="button"
+                  onClick={() => onSelectCampaign && onSelectCampaign(camp.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap border transition-all flex items-center gap-1.5 shrink-0 ${
+                    isActive
+                      ? 'bg-[#18181F] border-red-500/70 text-white shadow-sm'
+                      : 'bg-[#111116] border-[#1F1F2A] text-[#8B8BA8] hover:text-white hover:border-[#2A2A38]'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      camp.status === 'active' ? 'bg-emerald-400' : 'bg-slate-500'
+                    }`}
+                  />
+                  <span className="max-w-[180px] truncate">{camp.title}</span>
+                </button>
+              );
+            })}
+          </div>
+          {onCreateCampaign && (
+            <button
+              type="button"
+              onClick={onCreateCampaign}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap border border-dashed border-[#2A2A38] hover:border-red-500 text-red-400 hover:bg-red-950/20 flex items-center gap-1 shrink-0 transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Project</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* CAMPAIGN BUILDER COMMAND HEADER & AGNOSTIC AI ASSISTANT DOCK */}
       <div className="bg-[#111116] border border-[#1F1F2A] rounded-2xl p-4 sm:p-5 shadow-lg space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -1494,14 +1565,14 @@ export default function ContentStudio({
                 </span>
                 <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Live Multi-Asset Pipeline
+                  Brand: {brandProfile.name}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={campaignTitle}
-                  onChange={(e) => setCampaignTitle(e.target.value)}
+                  onChange={(e) => handleCampaignTitleChange(e.target.value)}
                   className="bg-transparent text-base sm:text-lg font-extrabold text-white focus:outline-none focus:bg-[#0A0A0C] focus:px-2.5 focus:py-0.5 rounded-lg border border-transparent focus:border-[#2A2A38] w-full max-w-md transition-all"
                   aria-label="Campaign Name"
                 />
@@ -1591,12 +1662,53 @@ export default function ContentStudio({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
       
-      {/* LEFT COLUMN: Ingestion & Campaign Configuration (5 cols) */}
-      <div className="lg:col-span-5 space-y-6">
+      {/* LEFT COLUMN: Guided 3-Step Campaign Controls (5 cols) — keeps Live Preview pinned upfront! */}
+      <div className="lg:col-span-5 space-y-4">
         
-        {/* Source Ingestion Card */}
+        {/* Clean 3-Step Builder Rail */}
+        <div className="grid grid-cols-3 gap-1.5 bg-[#111116] p-1.5 rounded-2xl border border-[#1F1F2A]">
+          <button
+            type="button"
+            onClick={() => setBuilderStep('offer')}
+            className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              builderStep === 'offer'
+                ? 'bg-red-600 text-white shadow-md shadow-red-950/40'
+                : 'text-[#8B8BA8] hover:text-white hover:bg-[#18181F]'
+            }`}
+          >
+            <span className="text-[10px] font-mono opacity-80">1.</span>
+            <span>Offer</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setBuilderStep('audience')}
+            className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              builderStep === 'audience'
+                ? 'bg-red-600 text-white shadow-md shadow-red-950/40'
+                : 'text-[#8B8BA8] hover:text-white hover:bg-[#18181F]'
+            }`}
+          >
+            <span className="text-[10px] font-mono opacity-80">2.</span>
+            <span>Audience</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setBuilderStep('launch')}
+            className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              builderStep === 'launch'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
+                : 'text-[#8B8BA8] hover:text-white hover:bg-[#18181F]'
+            }`}
+          >
+            <span className="text-[10px] font-mono opacity-80">3.</span>
+            <span>Launch</span>
+          </button>
+        </div>
+
+        {/* Step 1: Source Ingestion Card */}
+        {builderStep === 'offer' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2">
@@ -1951,9 +2063,19 @@ export default function ContentStudio({
               </>
             )}
           </button>
+          <button
+            type="button"
+            onClick={() => setBuilderStep('audience')}
+            className="w-full py-2 rounded-xl bg-[#18181F] hover:bg-[#22222E] border border-[#2A2A38] text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+          >
+            <span>Next: Step 2 — Target Audience &amp; Demographics</span>
+            <ArrowRight className="w-3.5 h-3.5 text-red-400" />
+          </button>
         </div>
+        )}
 
         {/* Step 2: Target Customer Prospect Intelligence (Derived from Ingested Product / Service) */}
+        {builderStep === 'audience' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
             <div>
@@ -2153,7 +2275,97 @@ export default function ContentStudio({
               </div>
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setBuilderStep('launch')}
+            className="w-full py-2.5 rounded-xl bg-[#18181F] hover:bg-[#22222E] border border-[#2A2A38] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+          >
+            <span>Next: Step 3 — Review &amp; Launch Campaign</span>
+            <ArrowRight className="w-3.5 h-3.5 text-emerald-400" />
+          </button>
         </div>
+        )}
+
+        {/* Step 3: Campaign Launchpad */}
+        {builderStep === 'launch' && (
+          <div className="bg-slate-900 border border-emerald-800/50 rounded-2xl p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-400" />
+                  Campaign Launchpad
+                </h2>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Verify your brand voice, audience, and creative assets before pushing live.
+                </p>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-400">Step 3 of 3</span>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <span className="text-slate-400">Campaign Project</span>
+                <span className="font-bold text-white truncate max-w-[200px]">{campaignTitle}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <span className="text-slate-400">Brand Voice</span>
+                <span className="font-bold text-white">{brandProfile.name} · {brandProfile.archetype}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <span className="text-slate-400">Target Demographic</span>
+                <span className="font-bold text-emerald-300">{selectedAvatar.name} ({receptivityScore}%)</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <span className="text-slate-400">Hero Video Asset</span>
+                {activeAttachedVideo ? (
+                  <span className="font-bold text-cyan-300 truncate max-w-[180px]">
+                    🎬 {activeAttachedVideo.title}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedFormat('short_video');
+                      setVideoProductionMode('ai_director');
+                    }}
+                    className="text-cyan-400 hover:text-cyan-300 font-bold underline"
+                  >
+                    + Generate or Record Video
+                  </button>
+                )}
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <span className="text-slate-400">Channels ({selectedPlatforms.length})</span>
+                <span className="font-mono font-bold text-white uppercase">
+                  {selectedPlatforms.join(' · ')}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={handleQueueAll}
+                disabled={userRole === 'analyst'}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-950/40 transition-all"
+              >
+                <Calendar className="w-4 h-4" />
+                <span>{userRole === 'creator' ? 'Submit Campaign for Approval' : 'Schedule Campaign to Distribution'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCreateSplitTest}
+                disabled={userRole === 'analyst'}
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all"
+              >
+                <Split className="w-4 h-4 text-blue-400" />
+                <span>Launch A/B Hook Split Test ({activePlatformPreview.toUpperCase()})</span>
+              </button>
+            </div>
+          </div>
+        )}
 
       </div>
 
@@ -2226,7 +2438,7 @@ export default function ContentStudio({
                 <span className="text-xs font-bold text-white uppercase tracking-wider">
                   Marketing Format Studio
                 </span>
-                <span className="text-[10px] bg-slate-800 text-slate-300 font-mono px-2 py-0.5 rounded-full border border-slate-700">
+                <span className="text-[10px] bg-slate-800 text-slate-300 font-mono px-2 py-0.5 rounded-full border border-slate-700 whitespace-nowrap">
                   {selectedFormat === 'social_post' && 'Organic Social Post'}
                   {selectedFormat === 'sponsored_ad' && 'Sponsored Ad + Pixel'}
                   {selectedFormat === 'short_video' && '9:16 Video Reel Storyboard'}
@@ -2311,7 +2523,7 @@ export default function ContentStudio({
                       </div>
                       <div>
                         <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                          <span>ADNETIKS Global</span>
+                          <span>{brandProfile.name}</span>
                           <span className="text-[10px] bg-amber-950/80 text-amber-300 font-mono px-2 py-0.5 rounded border border-amber-500/40">
                             Sponsored
                           </span>
@@ -3178,7 +3390,7 @@ export default function ContentStudio({
                         </div>
                         <div>
                           <div className="text-xs font-bold text-white flex items-center gap-1">
-                            <span>ADNETIKS Global</span>
+                            <span>{brandProfile.name}</span>
                             {activePlatformPreview === 'linkedin' && (
                               <span className="text-[9px] text-slate-400 font-normal">· 1st</span>
                             )}
