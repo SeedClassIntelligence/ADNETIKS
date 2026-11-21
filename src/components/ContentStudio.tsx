@@ -260,13 +260,30 @@ export default function ContentStudio({
     }
   }, [initialFormat]);
 
-  // Sponsored Ad Customization & Pixel State
-  const [adHeadline, setAdHeadline] = useState('Predictable Pipeline Without Headcount Inflation');
-  const [adCtaText, setAdCtaText] = useState('Book Live Demo');
-  const [adDestinationUrl, setAdDestinationUrl] = useState('https://adnetiks.io/solutions');
+  // Sponsored Ad Customization & Real Pixel / UTM Attribution State
+  const [adHeadline, setAdHeadline] = useState('Built for Audience Resonance — Not Vanity Reach');
+  const [adCtaText, setAdCtaText] = useState('Explore Now');
+  const [adDestinationUrl, setAdDestinationUrl] = useState('https://github.com/SeedClassIntelligence/ADNETIKS');
   const [pixelEvent, setPixelEvent] = useState<'Lead' | 'ViewContent' | 'AddToCart' | 'Purchase' | 'Contact'>('Lead');
-  const [pixelFiredCount, setPixelFiredCount] = useState(142);
-  const [pixelLastFired, setPixelLastFired] = useState('2 minutes ago');
+  const [pixelFiredCount, setPixelFiredCount] = useState(0);
+  const [pixelLastFired, setPixelLastFired] = useState('Awaiting first live event');
+  const [mintedUtmLink, setMintedUtmLink] = useState<{ slug: string; shortUrl: string; clicks: number } | null>(null);
+  const [isMintingUtm, setIsMintingUtm] = useState(false);
+
+  // Hydrate real conversion count from /api/events
+  useEffect(() => {
+    fetch('/api/events')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && typeof d.totalEvents === 'number') {
+          setPixelFiredCount(d.totalEvents);
+          if (d.recentEvents?.[0]?.timestamp) {
+            setPixelLastFired(new Date(d.recentEvents[0].timestamp).toLocaleTimeString());
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Multi-Slide Carousel State
   const [activeCarouselSlide, setActiveCarouselSlide] = useState(0);
@@ -770,13 +787,72 @@ export default function ContentStudio({
     return () => clearInterval(timer);
   }, [isVideoPlaying, currentVideoBeatIndex, videoProductionMode, isVoiceoverAudible, videoBeats]);
 
-  const handleTestPixelFire = () => {
+  // Real Conversion Pixel Fire (POST /api/events -> persisted in .adnetiks-data/delivery.json)
+  const handleTestPixelFire = async () => {
+    try {
+      const res = await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventName: pixelEvent,
+          campaignId: activeCampaignObj?.id || 'camp-active',
+          platform: activePlatformPreview,
+          variantLabel: activeVariantTab === 'A' ? 'Variant A' : 'Variant B',
+          url: adDestinationUrl,
+          source: 'studio_test',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const nextCount = data.summary?.totalEvents ?? pixelFiredCount + 1;
+        setPixelFiredCount(nextCount);
+        setPixelLastFired('Just now');
+        showNotificationToast(
+          'Live Pixel Event Recorded',
+          `Persisted "${pixelEvent}" (${activePlatformPreview.toUpperCase()} · Variant ${activeVariantTab}) to Attribution Telemetry. Total events: ${nextCount}.`
+        );
+        return;
+      }
+    } catch {
+      // Fallback
+    }
     setPixelFiredCount((prev) => prev + 1);
     setPixelLastFired('Just now');
-    showNotificationToast(
-      'Pixel Conversion Event Fired',
-      `Event "${pixelEvent}" registered at ${adDestinationUrl}. Total tracked: ${pixelFiredCount + 1}.`
-    );
+  };
+
+  // Mint Real /r/:slug UTM Short Tracking Link
+  const handleMintUtmLink = async () => {
+    setIsMintingUtm(true);
+    try {
+      const dest =
+        sourceType === 'url' && sourceInput.trim().startsWith('http')
+          ? sourceInput.trim()
+          : adDestinationUrl;
+      const res = await fetch('/api/utm/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          destinationUrl: dest,
+          campaignId: activeCampaignObj?.id || 'camp-active',
+          platform: activePlatformPreview,
+          variantLabel: activeVariantTab === 'A' ? 'Variant A' : 'Variant B',
+        }),
+      });
+      if (!res.ok) throw new Error('UTM link creation failed');
+      const data = await res.json();
+      if (data.link) {
+        setMintedUtmLink(data.link);
+        navigator.clipboard?.writeText(data.link.shortUrl).catch(() => {});
+        showNotificationToast(
+          'Real UTM Tracking Link Minted',
+          `${data.link.shortUrl} copied to clipboard — every click redirects with UTM tags & logs real telemetry.`
+        );
+      }
+    } catch {
+      showNotificationToast('UTM Error', 'Could not create tracking link.');
+    } finally {
+      setIsMintingUtm(false);
+    }
   };
 
   // Mobile Device Preview Toggle & Fold Line Inspection
@@ -2571,6 +2647,66 @@ export default function ContentStudio({
                 <span className="font-mono font-bold text-white uppercase">
                   {selectedPlatforms.join(' · ')}
                 </span>
+              </div>
+
+              {/* Real UTM Short-Link & First-Party Pixel Card */}
+              <div className="p-3 rounded-xl bg-slate-950 border border-cyan-800/50 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-cyan-300 uppercase tracking-wider">
+                    Real UTM Link &amp; Live Pixel
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isMintingUtm}
+                    onClick={handleMintUtmLink}
+                    className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[10px] font-bold transition-all"
+                  >
+                    {isMintingUtm ? 'Minting...' : 'Mint /r/ Link'}
+                  </button>
+                </div>
+
+                {mintedUtmLink && (
+                  <div className="p-2 rounded-lg bg-[#0A0A0C] border border-emerald-700/50 flex items-center justify-between gap-2">
+                    <a
+                      href={mintedUtmLink.shortUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-mono text-emerald-300 hover:underline truncate"
+                    >
+                      {mintedUtmLink.shortUrl}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(mintedUtmLink.shortUrl);
+                        showNotificationToast('Copied', mintedUtmLink.shortUrl);
+                      }}
+                      className="text-[10px] text-slate-300 hover:text-white px-1.5 py-0.5 rounded bg-slate-800 shrink-0"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400">
+                    <span>Embeddable Pixel Snippet ({pixelFiredCount} live events)</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const snippet = `<script src="${window.location.origin}/api/pixel.js" data-campaign="${activeCampaignObj?.id || 'camp-active'}"></script>`;
+                        navigator.clipboard?.writeText(snippet);
+                        showNotificationToast('Pixel Script Copied', 'Paste before </body> on your landing page or store.');
+                      }}
+                      className="text-cyan-400 hover:text-cyan-300 font-semibold"
+                    >
+                      Copy Script
+                    </button>
+                  </div>
+                  <code className="block text-[9px] font-mono text-slate-300 bg-[#0A0A0C] p-2 rounded-lg border border-slate-800 overflow-x-auto whitespace-nowrap">
+                    {`<script src="${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/api/pixel.js" data-campaign="${activeCampaignObj?.id || 'camp-active'}"></script>`}
+                  </code>
+                </div>
               </div>
             </div>
 

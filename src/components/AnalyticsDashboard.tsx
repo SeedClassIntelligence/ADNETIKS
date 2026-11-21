@@ -4,7 +4,7 @@
  * ADNETIKS Performance Analytics & Real-Time Engagement Heatmap
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PostVariant, HeatmapCell, CompetitorProfile } from '../types';
 import {
   BarChart3,
@@ -18,6 +18,9 @@ import {
   ArrowUpRight,
   Flame,
   Cpu,
+  Radio,
+  Link2,
+  RefreshCw,
 } from 'lucide-react';
 import CompetitorWatch from './CompetitorWatch';
 import TrendingSocialMonitor from './TrendingSocialMonitor';
@@ -56,6 +59,41 @@ export default function AnalyticsDashboard({
   const [activeSubView, setActiveSubView] = useState<'content_performance' | 'ai_service_agents'>('content_performance');
   const [hoveredCell, setHoveredCell] = useState<HeatmapCell | null>(null);
 
+  // Phase 2 Real First-Party Attribution Telemetry (from GET /api/events)
+  const [liveTelemetry, setLiveTelemetry] = useState<{
+    totalClicks: number;
+    totalConversions: number;
+    totalEvents: number;
+    totalLinks: number;
+    totalDispatches: number;
+    byVariant: Record<string, { clicks: number; conversions: number }>;
+    recentEvents: Array<{
+      id: string;
+      eventName: string;
+      campaignId: string;
+      platform?: string;
+      variantLabel?: string;
+      source: string;
+      timestamp: string;
+    }>;
+  } | null>(null);
+  const [isRefreshingTelemetry, setIsRefreshingTelemetry] = useState(false);
+
+  const fetchLiveTelemetry = () => {
+    setIsRefreshingTelemetry(true);
+    fetch('/api/events')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.ok) setLiveTelemetry(d);
+      })
+      .catch(() => {})
+      .finally(() => setIsRefreshingTelemetry(false));
+  };
+
+  useEffect(() => {
+    fetchLiveTelemetry();
+  }, []);
+
   // Computed summary metrics
   const totalImpressions = posts.reduce((acc, p) => acc + (p.metrics?.impressions || 0), 68400);
   const totalClicks = posts.reduce((acc, p) => acc + (p.metrics?.clicks || 0), 3840);
@@ -78,6 +116,91 @@ export default function AnalyticsDashboard({
   return (
     <div className="space-y-8">
       
+      {/* LIVE FIRST-PARTY ATTRIBUTION & DELIVERY TELEMETRY (REAL SERVER DATA) */}
+      <div className="bg-[#111116] border border-emerald-700/40 rounded-2xl p-5 space-y-4 shadow-lg">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <span className="text-xs font-bold uppercase tracking-wider text-white">
+              Live First-Party Attribution Telemetry
+            </span>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-700/60">
+              REAL SERVER DATA
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchLiveTelemetry}
+            className="px-2.5 py-1 rounded-lg bg-[#18181F] hover:bg-[#22222E] border border-[#2A2A38] text-[11px] font-semibold text-slate-300 flex items-center gap-1.5"
+          >
+            <RefreshCw className={`w-3 h-3 ${isRefreshingTelemetry ? 'animate-spin text-emerald-400' : ''}`} />
+            <span>Refresh Live</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="p-3 rounded-xl bg-[#0A0A0C] border border-[#1F1F2A]">
+            <div className="text-[10px] font-mono text-slate-400 uppercase flex items-center gap-1">
+              <Link2 className="w-3 h-3 text-cyan-400" /> Real UTM Clicks
+            </div>
+            <div className="text-xl font-extrabold text-white font-mono mt-1">
+              {liveTelemetry?.totalClicks ?? 0}
+            </div>
+            <div className="text-[10px] text-slate-500">{liveTelemetry?.totalLinks ?? 0} active /r/ links</div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-[#0A0A0C] border border-[#1F1F2A]">
+            <div className="text-[10px] font-mono text-slate-400 uppercase">Real Pixel Conversions</div>
+            <div className="text-xl font-extrabold text-emerald-400 font-mono mt-1">
+              {liveTelemetry?.totalConversions ?? 0}
+            </div>
+            <div className="text-[10px] text-slate-500">{liveTelemetry?.totalEvents ?? 0} total live events</div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-[#0A0A0C] border border-[#1F1F2A]">
+            <div className="text-[10px] font-mono text-slate-400 uppercase">Real Dispatches</div>
+            <div className="text-xl font-extrabold text-cyan-400 font-mono mt-1">
+              {liveTelemetry?.totalDispatches ?? 0}
+            </div>
+            <div className="text-[10px] text-slate-500">Logged via Delivery Bridge</div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-[#0A0A0C] border border-[#1F1F2A]">
+            <div className="text-[10px] font-mono text-slate-400 uppercase">Live A/B Attribution</div>
+            <div className="text-xs font-bold text-white font-mono mt-1.5">
+              A: {(liveTelemetry?.byVariant?.['Variant A']?.clicks || 0) + (liveTelemetry?.byVariant?.['Variant A']?.conversions || 0)} · B: {(liveTelemetry?.byVariant?.['Variant B']?.clicks || 0) + (liveTelemetry?.byVariant?.['Variant B']?.conversions || 0)}
+            </div>
+            <div className="text-[10px] text-slate-500">Clicks + conversions by hook</div>
+          </div>
+        </div>
+
+        {liveTelemetry && liveTelemetry.recentEvents.length > 0 && (
+          <div className="space-y-1.5 pt-2 border-t border-[#1F1F2A]">
+            <div className="text-[10px] font-mono uppercase text-slate-400">Live Event Stream</div>
+            <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+              {liveTelemetry.recentEvents.slice(0, 5).map((ev) => (
+                <div
+                  key={ev.id}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#0A0A0C] border border-[#1F1F2A] flex items-center justify-between gap-2 text-[11px]"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-950/70 text-emerald-300 font-mono text-[10px] font-bold">
+                      {ev.eventName}
+                    </span>
+                    <span className="text-slate-300 truncate">
+                      {ev.platform?.toUpperCase() || 'DIRECT'} · {ev.variantLabel || 'Variant A'} ({ev.source})
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                    {new Date(ev.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Header & Export CTA */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
         <div>

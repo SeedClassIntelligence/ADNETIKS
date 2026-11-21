@@ -7,12 +7,24 @@ import { handleGenerateContent, handleGenerateImage, handleDiscoverAvatars, hand
 import { getLLMConfig, setRuntimeLLMConfig } from './src/server/llmProvider.ts';
 import { loadWorkspace, saveWorkspace, saveDataUrlMedia, resolveMediaFile, listMediaFiles } from './src/server/storage.ts';
 import { scrapeUrlContext, analyzeImageVisual } from './src/server/ingest.ts';
+import {
+  getPublicPublishConfig,
+  updatePublishConfig,
+  dispatchPostReal,
+  createUtmTrackingLink,
+  resolveAndTrackUtmRedirect,
+  recordConversionEvent,
+  getAttributionSummary,
+  startBackgroundScheduler,
+  buildEmbeddablePixelScript,
+} from './src/server/delivery.ts';
 
 // Custom Vite plugin to handle /api/* server endpoints directly in dev
 function apiServerPlugin(): Plugin {
   return {
     name: 'adnetiks-api-server',
     configureServer(server) {
+      startBackgroundScheduler();
       server.middlewares.use(async (req, res, next) => {
         // Avatar Discovery Route (Offer-Derived Prospects)
         if (req.url?.startsWith('/api/discover-avatars') && req.method === 'POST') {
@@ -277,6 +289,159 @@ function apiServerPlugin(): Plugin {
               res.end(JSON.stringify({ ok: false, error: err.message || 'Vision analysis failed' }));
             }
           });
+          return;
+        }
+
+        // Phase 2: Publishing Config (GET / POST /api/publish/config)
+        if (req.url?.startsWith('/api/publish/config')) {
+          if (req.method === 'GET') {
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ok: true, config: getPublicPublishConfig() }));
+            return;
+          }
+          if (req.method === 'POST') {
+            let bodyStr = '';
+            req.on('data', (chunk) => (bodyStr += chunk));
+            req.on('end', () => {
+              try {
+                const body = JSON.parse(bodyStr || '{}');
+                updatePublishConfig(body);
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 200;
+                res.end(JSON.stringify({ ok: true, config: getPublicPublishConfig() }));
+              } catch (err: any) {
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 400;
+                res.end(JSON.stringify({ ok: false, error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // Phase 2: Real Multi-Post Publishing Dispatch (POST /api/publish/dispatch)
+        if (req.url?.startsWith('/api/publish/dispatch') && req.method === 'POST') {
+          let bodyStr = '';
+          req.on('data', (chunk) => (bodyStr += chunk));
+          req.on('end', async () => {
+            try {
+              const body = JSON.parse(bodyStr || '{}');
+              const postsToSend = Array.isArray(body.posts) ? body.posts : body.post ? [body.post] : [];
+              const results = [];
+              for (const p of postsToSend) {
+                const entry = await dispatchPostReal(p);
+                results.push(entry);
+              }
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({ ok: true, results }));
+            } catch (err: any) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 500;
+              res.end(JSON.stringify({ ok: false, error: err.message || 'Dispatch error' }));
+            }
+          });
+          return;
+        }
+
+        // Phase 2: Real Delivery Logs & Attribution Summary (GET /api/publish/logs)
+        if (req.url?.startsWith('/api/publish/logs') && req.method === 'GET') {
+          const summary = getAttributionSummary();
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true, logs: summary.recentLogs, lastSchedulerTick: summary.lastSchedulerTick }));
+          return;
+        }
+
+        // Phase 2: Real UTM Short-Link Minting & Listing (POST /api/utm/create, GET /api/utm)
+        if (req.url?.startsWith('/api/utm/create') && req.method === 'POST') {
+          let bodyStr = '';
+          req.on('data', (chunk) => (bodyStr += chunk));
+          req.on('end', () => {
+            try {
+              const body = JSON.parse(bodyStr || '{}');
+              const link = createUtmTrackingLink(body);
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({ ok: true, link }));
+            } catch (err: any) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 400;
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
+        if (req.url?.startsWith('/api/utm') && req.method === 'GET') {
+          const summary = getAttributionSummary();
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true, links: summary.recentLinks, totalClicks: summary.totalClicks }));
+          return;
+        }
+
+        // Phase 2: Real HTTP 302 Short-Link Redirector & Click Tracker (GET /r/:slug)
+        if (req.url?.startsWith('/r/') && req.method === 'GET') {
+          const slug = req.url.split('?')[0].replace(/^\/r\//, '').trim();
+          const resolved = resolveAndTrackUtmRedirect(slug);
+          if (!resolved) {
+            res.statusCode = 404;
+            res.end('ADNETIKS tracking link not found');
+            return;
+          }
+          res.statusCode = 302;
+          res.setHeader('Location', resolved.redirectUrl);
+          res.end();
+          return;
+        }
+
+        // Phase 2: Real Conversion Pixel & Telemetry Collector (GET/POST/OPTIONS /api/events)
+        if (req.url?.startsWith('/api/events')) {
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+          if (req.method === 'OPTIONS') {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
+          if (req.method === 'GET') {
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ok: true, ...getAttributionSummary() }));
+            return;
+          }
+          if (req.method === 'POST') {
+            let bodyStr = '';
+            req.on('data', (chunk) => (bodyStr += chunk));
+            req.on('end', () => {
+              try {
+                const body = JSON.parse(bodyStr || '{}');
+                const event = recordConversionEvent(body);
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 200;
+                res.end(JSON.stringify({ ok: true, event, summary: getAttributionSummary() }));
+              } catch (err: any) {
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 400;
+                res.end(JSON.stringify({ ok: false, error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // Phase 2: Embeddable First-Party Pixel Script (GET /api/pixel.js)
+        if (req.url?.startsWith('/api/pixel.js') && req.method === 'GET') {
+          const host = req.headers.host || 'localhost:3000';
+          const proto = req.headers['x-forwarded-proto'] || 'http';
+          const js = buildEmbeddablePixelScript(`${proto}://${host}`);
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.statusCode = 200;
+          res.end(js);
           return;
         }
 
