@@ -26,6 +26,7 @@ import CompetitorWatch from './CompetitorWatch';
 import TrendingSocialMonitor from './TrendingSocialMonitor';
 import SentimentCalendarHeatmap from './SentimentCalendarHeatmap';
 import AIAgentPerformanceView from './AIAgentPerformanceView';
+import CostEconomicsView from './CostEconomicsView';
 import {
   initialTrendingActivities,
   initialCalendarSentimentData,
@@ -56,7 +57,7 @@ export default function AnalyticsDashboard({
   onDeployTrendingTheme,
   showNotificationToast,
 }: AnalyticsDashboardProps) {
-  const [activeSubView, setActiveSubView] = useState<'content_performance' | 'ai_service_agents'>('content_performance');
+  const [activeSubView, setActiveSubView] = useState<'content_performance' | 'ai_service_agents' | 'cost_economics'>('content_performance');
   const [hoveredCell, setHoveredCell] = useState<HeatmapCell | null>(null);
 
   // Phase 2 Real First-Party Attribution Telemetry (from GET /api/events)
@@ -300,11 +301,29 @@ export default function AnalyticsDashboard({
               92.6% Auto
             </span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSubView('cost_economics')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              activeSubView === 'cost_economics'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <DollarSign className="w-4 h-4" />
+            <span>Cost & Unit Economics</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-slate-950 text-[10px] text-emerald-300 font-mono font-bold">
+              LIVE
+            </span>
+          </button>
         </div>
 
         <div className="text-[11px] text-slate-400 px-2 font-mono hidden md:block">
           {activeSubView === 'ai_service_agents'
             ? 'Telemetry: ServiceOrchestrator Real-Time Sentry'
+            : activeSubView === 'cost_economics'
+            ? 'Ledger: Live Token Spend & Monthly Unit Economics'
             : 'Telemetry: Cross-Channel Social & Attribution'}
         </div>
       </div>
@@ -317,6 +336,8 @@ export default function AnalyticsDashboard({
           interventionFactors={initialInterventionFactors}
           showNotificationToast={showNotificationToast}
         />
+      ) : activeSubView === 'cost_economics' ? (
+        <CostEconomicsView showNotificationToast={showNotificationToast} />
       ) : (
         <>
           {/* KPI METRIC STRIP */}

@@ -26,6 +26,7 @@ import {
   synthesizeMemoryFromSignals,
 } from './src/server/memory.ts';
 import { runFullWebsiteBrandScan } from './src/server/brandScanner.ts';
+import { getUsageSummary, clearUsageLedger } from './src/server/usageLedger.ts';
 
 // Custom Vite plugin to handle /api/* server endpoints directly in dev
 function apiServerPlugin(): Plugin {
@@ -541,6 +542,23 @@ function apiServerPlugin(): Plugin {
             res.setHeader('Content-Type', 'application/json');
             res.statusCode = removed ? 200 : 404;
             res.end(JSON.stringify({ ok: removed, ...listLearnedPatterns() }));
+            return;
+          }
+        }
+
+        // Live AI Cost & Token Usage Ledger (/api/usage)
+        if (req.url?.startsWith('/api/usage')) {
+          if (req.method === 'GET') {
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ok: true, ...getUsageSummary() }));
+            return;
+          }
+          if (req.method === 'DELETE') {
+            clearUsageLedger();
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ok: true, ...getUsageSummary() }));
             return;
           }
         }

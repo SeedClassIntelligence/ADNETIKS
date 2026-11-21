@@ -6,6 +6,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
+import { recordUsageEvent, estimateTokens } from './usageLedger.ts';
 
 export type LLMProvider = 'gemini' | 'openai' | 'anthropic' | 'openai_compatible';
 
@@ -169,19 +170,35 @@ export async function generateText(
 ): Promise<string> {
   const resolved: LLMConfig = { ...getLLMConfig(), ...configOverride };
 
+  let output = '';
   switch (resolved.provider) {
     case 'gemini':
-      return generateWithGemini(prompt, systemPrompt, resolved);
+      output = await generateWithGemini(prompt, systemPrompt, resolved);
+      break;
     case 'openai':
-      return generateWithOpenAI(prompt, systemPrompt, resolved);
+      output = await generateWithOpenAI(prompt, systemPrompt, resolved);
+      break;
     case 'anthropic':
-      return generateWithAnthropic(prompt, systemPrompt, resolved);
+      output = await generateWithAnthropic(prompt, systemPrompt, resolved);
+      break;
     case 'openai_compatible':
-      return generateWithOpenAICompatible(prompt, systemPrompt, resolved);
+      output = await generateWithOpenAICompatible(prompt, systemPrompt, resolved);
+      break;
     default: {
       // TypeScript exhaustiveness guard
       const _exhaustive: never = resolved.provider;
       throw new Error(`Unknown LLM provider: ${String(_exhaustive)}`);
     }
   }
+
+  recordUsageEvent({
+    operation: 'llm_text',
+    provider: resolved.provider,
+    model: resolved.model,
+    inputTokens: estimateTokens(`${systemPrompt}\n${prompt}`),
+    outputTokens: estimateTokens(output),
+    meta: 'Live LLM synthesis',
+  });
+
+  return output;
 }

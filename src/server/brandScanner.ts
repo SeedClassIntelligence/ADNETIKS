@@ -17,6 +17,7 @@ import crypto from 'crypto';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { scrapeUrlContext, analyzeImageVisual } from './ingest.ts';
+import { recordUsageEvent } from './usageLedger.ts';
 
 const execFileAsync = promisify(execFile);
 const MEDIA_DIR = path.resolve(process.cwd(), '.adnetiks-data', 'media');
@@ -796,6 +797,16 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
     (p) =>
       `[PAGE: ${p.label} (${p.path})]\nHeadings: ${p.headings.slice(0, 4).join(' | ')}\nKey Copy: ${p.excerpt.slice(0, 360)}`
   );
+
+  recordUsageEvent({
+    operation: 'brand_scan',
+    provider: 'cdp_chrome',
+    model: 'headless-cdp',
+    inputTokens: 0,
+    outputTokens: 0,
+    overrideCostUsd: 0,
+    meta: `${domain} (${cdp.crawledPages.length || 1} page${cdp.crawledPages.length === 1 ? '' : 's'})`,
+  });
 
   return {
     ok: true,

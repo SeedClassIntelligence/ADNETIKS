@@ -10,6 +10,7 @@ import { GoogleGenAI } from '@google/genai';
 import { generateText } from './llmProvider.ts';
 import { extractFirstUrl, scrapeUrlContext } from './ingest.ts';
 import { buildActiveMemoryPromptBlock } from './memory.ts';
+import { recordUsageEvent } from './usageLedger.ts';
 
 async function enrichSourceIfUrl(sourceInput: string, sourceType?: string) {
   const url = extractFirstUrl(sourceInput || '');
@@ -129,6 +130,13 @@ Return STRICTLY valid JSON conforming to this schema:
   }
 
   // Resilient High-Fidelity Heuristic Generation grounded in real scraped webpage title/description
+  recordUsageEvent({
+    operation: 'generate_content',
+    provider: 'heuristic',
+    model: 'local-brand-engine',
+    overrideCostUsd: 0,
+    meta: `${payload.brandProfile.name} (${payload.platforms.length} channels)`,
+  });
   const groundedPayload: GenerateContentPayload = scraped?.ok
     ? {
         ...payload,
@@ -267,6 +275,13 @@ export async function handleGenerateImage(payload: GenerateImagePayload) {
       for (const part of response.candidates?.[0]?.content?.parts ?? []) {
         if (part.inlineData?.data) {
           const mime = part.inlineData.mimeType ?? 'image/png';
+          recordUsageEvent({
+            operation: 'generate_image',
+            provider: 'gemini',
+            model: 'gemini-3.1-flash-lite-image',
+            overrideCostUsd: 0.03,
+            meta: `${payload.brandProfile.name} (${aspectRatio})`,
+          });
           return {
             imageUrl: `data:${mime};base64,${part.inlineData.data}`,
             source: 'gemini-3.1-flash-lite-image',
@@ -282,6 +297,13 @@ export async function handleGenerateImage(payload: GenerateImagePayload) {
   }
 
   // High-fidelity fallback asset selector
+  recordUsageEvent({
+    operation: 'generate_image',
+    provider: 'heuristic',
+    model: 'adnetiks-brand-asset-engine',
+    overrideCostUsd: 0,
+    meta: `${payload.brandProfile.name} (${aspectRatio} local asset)`,
+  });
   const fallbackImages = [
     '/src/assets/images/campaign_creative_asset_1793456644284.jpg',
     '/src/assets/images/adnetiks_hero_banner_1793456625181.jpg',
@@ -375,6 +397,13 @@ Return STRICTLY valid JSON conforming to this schema:
   }
 
   // Resilient Heuristic Prospect Discovery Engine
+  recordUsageEvent({
+    operation: 'discover_avatars',
+    provider: 'heuristic',
+    model: 'local-avatar-engine',
+    overrideCostUsd: 0,
+    meta: `${payload.brandProfile.name}`,
+  });
   return generateHeuristicProspects(payload);
 }
 
@@ -741,6 +770,13 @@ Format your output strictly as JSON conforming to:
   }
 
   // Heuristic Video Generation Engine
+  recordUsageEvent({
+    operation: 'generate_ai_video',
+    provider: 'heuristic',
+    model: 'local-video-director',
+    overrideCostUsd: 0,
+    meta: `${payload.brandProfile.name} (9:16 storyboard)`,
+  });
   const isMusic = /music|track|album|single|artist|spotify|sound/i.test(inputSnippet);
   const isCodeOrIntel = /github|seed|intelligence|code|ai|agent|srt|repo/i.test(inputSnippet);
   const isEcommerce = /store|product|shop|checkout|sale|cart/i.test(inputSnippet);
