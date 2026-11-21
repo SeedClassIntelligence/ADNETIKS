@@ -1,11 +1,12 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * ADNETIKS Smart CDP Website Brand DNA & Visual Screenshot Scanner
+ * ADNETIKS Smart Multi-Page CDP Website Brand DNA & Deep Site Crawler
  * Drives headless Chrome/Edge via Chrome DevTools Protocol (native Node WebSocket):
  * - Waits intelligently for SPA hydration, async fetches, and splash/booting loaders to clear
- * - Extracts LIVE rendered headings, body copy, computed CSS fonts & button accent colors
- * - Captures crisp Desktop (1440x900) & Mobile (430x932) screenshots into `.adnetiks-data/media/`
+ * - Crawls BOTH classic <a href> internal pages AND React SPA <nav>/<header> button views (up to 5 pages)
+ * - Captures permanent Desktop (1440x900) screenshots for every crawled page + Mobile (430x932) hero capture
+ * - Extracts full-site Brand Dossier (headings, copy, computed CSS fonts & exact brand hex palette)
  */
 
 import fs from 'fs';
@@ -86,6 +87,15 @@ function getFreePort(): Promise<number> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+export interface CrawledPageInsight {
+  label: string;
+  path: string;
+  title: string;
+  headings: string[];
+  excerpt: string;
+  screenshotUrl?: string;
+}
+
 interface CdpCaptureResult {
   desktopOk: boolean;
   mobileOk: boolean;
@@ -95,20 +105,25 @@ interface CdpCaptureResult {
   computedFonts: string[];
   computedAccentColors: string[];
   faviconUrl?: string;
+  crawledPages: CrawledPageInsight[];
 }
 
 /**
- * Connects to headless Chrome via CDP, waits for SPA boot/splash loaders to finish,
- * extracts live rendered DOM text/fonts/accent colors, and captures Desktop + Mobile PNGs.
+ * Connects to headless Chrome via CDP, waits for SPA hydration, captures Homepage Desktop + Mobile,
+ * AND crawls up to 4 top internal brand/product/comparison/about pages (both <a href> and SPA buttons).
  */
 async function captureViaSmartCdp(
   browserPath: string,
   targetUrl: string,
+  slugSafe: string,
+  token: string,
   desktopOutFile: string,
-  mobileOutFile: string
+  mobileOutFile: string,
+  desktopFilename: string
 ): Promise<CdpCaptureResult> {
   const port = await getFreePort();
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'adnetiks-cdp-'));
+  const origin = new URL(targetUrl).origin;
 
   const proc = spawn(
     browserPath,
@@ -128,7 +143,7 @@ async function captureViaSmartCdp(
   let ws: WebSocket | null = null;
 
   try {
-    // 1. Wait for Chrome CDP endpoint to come online
+    // 1. Wait for Chrome CDP endpoint
     let pageWsUrl: string | null = null;
     for (let i = 0; i < 30; i++) {
       try {
@@ -153,7 +168,6 @@ async function captureViaSmartCdp(
       throw new Error('CDP endpoint did not start in time');
     }
 
-    // 2. Open native WebSocket to CDP
     ws = new WebSocket(pageWsUrl);
     await new Promise<void>((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('CDP WS open timeout')), 5000);
@@ -205,6 +219,66 @@ async function captureViaSmartCdp(
       });
     };
 
+    const waitForHydration = async (maxWaitMs = 12000) => {
+      const readinessExpr = `(() => {
+        const text = (document.body && document.body.innerText ? document.body.innerText : '').trim();
+        const lower = text.toLowerCase();
+        const hasLoaderPhrase =
+          text.length < 480 &&
+          /(booting|loading\\.{2,3}|initializing|starting engine|please wait|just a moment)/i.test(lower);
+        const headingsCount = document.querySelectorAll('h1, h2').length;
+        const ready = document.readyState === 'complete' && !hasLoaderPhrase && (text.length >= 220 || headingsCount >= 1);
+        return { ready, textLen: text.length, headingsCount, hasLoaderPhrase };
+      })()`;
+
+      let stableHits = 0;
+      let lastTextLen = 0;
+      const deadline = Date.now() + maxWaitMs;
+      while (Date.now() < deadline) {
+        await sleep(450);
+        try {
+          const evalRes = await sendCdp('Runtime.evaluate', {
+            expression: readinessExpr,
+            returnByValue: true,
+          });
+          const val = evalRes?.result?.value;
+          if (val?.ready) {
+            if (Math.abs(val.textLen - lastTextLen) < 25) stableHits += 1;
+            else stableHits = 0;
+            lastTextLen = val.textLen;
+            if (stableHits >= 2) break;
+          }
+        } catch {
+          // navigating
+        }
+      }
+      await sleep(750);
+    };
+
+    const extractPageContent = async (): Promise<{ title: string; headings: string[]; excerpt: string }> => {
+      try {
+        const res = await sendCdp('Runtime.evaluate', {
+          expression: `(() => {
+            const headings = Array.from(document.querySelectorAll('h1, h2, h3'))
+              .map(el => (el.innerText || '').replace(/\\s+/g, ' ').trim())
+              .filter(t => t.length >= 4 && t.length <= 160);
+            const uniqHeadings = [];
+            for (const h of headings) {
+              if (!uniqHeadings.includes(h)) uniqHeadings.push(h);
+              if (uniqHeadings.length >= 6) break;
+            }
+            const mainEl = document.querySelector('main') || document.body;
+            const excerpt = ((mainEl && mainEl.innerText) || '').replace(/\\s+/g, ' ').trim().slice(0, 1200);
+            return { title: document.title || '', headings: uniqHeadings, excerpt };
+          })()`,
+          returnByValue: true,
+        });
+        return res?.result?.value || { title: '', headings: [], excerpt: '' };
+      } catch {
+        return { title: '', headings: [], excerpt: '' };
+      }
+    };
+
     await sendCdp('Page.enable');
     await sendCdp('Runtime.enable');
     await sendCdp('Emulation.setDeviceMetricsOverride', {
@@ -214,67 +288,21 @@ async function captureViaSmartCdp(
       mobile: false,
     });
 
-    // 3. Navigate to target URL
+    // 2. Load Homepage & wait for full hydration
     await sendCdp('Page.navigate', { url: targetUrl });
+    await waitForHydration(15000);
 
-    // 4. Smart Hydration & Splash-Loader Wait Loop (up to 15 seconds)
-    const readinessExpr = `(() => {
-      const text = (document.body && document.body.innerText ? document.body.innerText : '').trim();
-      const lower = text.toLowerCase();
-      const hasLoaderPhrase =
-        text.length < 480 &&
-        /(booting|loading\\.{2,3}|initializing|starting engine|please wait|just a moment)/i.test(lower);
-      const headingsCount = document.querySelectorAll('h1, h2').length;
-      const ready = document.readyState === 'complete' && !hasLoaderPhrase && (text.length >= 260 || headingsCount >= 1);
-      return { ready, textLen: text.length, headingsCount, hasLoaderPhrase, readyState: document.readyState };
-    })()`;
-
-    let stableHits = 0;
-    let lastTextLen = 0;
-    const waitDeadline = Date.now() + 15000;
-
-    while (Date.now() < waitDeadline) {
-      await sleep(500);
-      try {
-        const evalRes = await sendCdp('Runtime.evaluate', {
-          expression: readinessExpr,
-          returnByValue: true,
-        });
-        const val = evalRes?.result?.value;
-        if (val?.ready) {
-          if (Math.abs(val.textLen - lastTextLen) < 25) {
-            stableHits += 1;
-          } else {
-            stableHits = 0;
-          }
-          lastTextLen = val.textLen;
-          if (stableHits >= 2) break; // DOM settled cleanly for ~1s!
-        }
-      } catch {
-        // still navigating
-      }
-    }
-
-    // Extra settle delay for web fonts & fade-in CSS animations
-    await sleep(900);
-
-    // 5. Extract LIVE rendered DOM text, headings, fonts & button accent colors
+    // 3. Extract Homepage Brand DNA (fonts, accents, favicon, headings, copy)
     const domExtractExpr = `(() => {
       const rgbToHex = (rgbStr) => {
         const m = (rgbStr || '').match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)/i);
         if (!m) return null;
         if (m[4] !== undefined && parseFloat(m[4]) < 0.25) return null;
         const r = parseInt(m[1], 10), g = parseInt(m[2], 10), b = parseInt(m[3], 10);
-        // Skip pure white/black/grays when collecting accents
         const max = Math.max(r, g, b), min = Math.min(r, g, b);
         if (max - min < 28) return null;
         return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
       };
-
-      const headings = Array.from(document.querySelectorAll('h1, h2'))
-        .map(el => (el.innerText || '').replace(/\\s+/g, ' ').trim())
-        .filter(t => t.length >= 4 && t.length <= 160)
-        .slice(0, 6);
 
       const fonts = [];
       const ignoreFonts = new Set(['sans-serif', 'serif', 'monospace', 'system-ui', 'ui-sans-serif', 'arial', 'helvetica', '-apple-system', 'blinkmacsystemfont', 'segoe ui']);
@@ -306,22 +334,60 @@ async function captureViaSmartCdp(
       const iconEl = document.querySelector('link[rel*="apple-touch-icon"], link[rel*="icon"]');
       const faviconUrl = iconEl ? iconEl.href : '';
 
+      // Discover internal navigation targets (both <a href> AND SPA <nav>/<header> buttons!)
+      const skipRe = /\\b(sign\\s*in|log\\s*in|login|sign\\s*up|create\\s*account|register|privacy|terms|cookie|legal|logout|cart|checkout|support|help\\s*center|status|v\\d+\\.\\d+)\\b/i;
+      const priorityRe = /\\b(compar|doctrine|provider|carrier|about|feature|pricing|product|service|how\\s*it\\s*works|solution|mission|story|tour|shop|merch|music|catalog|why)/i;
+
+      const navLinks = [];
+      const seenKeys = new Set(['home']);
+
+      const anchors = Array.from(document.querySelectorAll('header a[href], nav a[href], a[href]'));
+      for (const a of anchors) {
+        const label = (a.innerText || a.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim();
+        const href = a.href || '';
+        if (!label || label.length < 3 || label.length > 36) continue;
+        if (!href.startsWith(${JSON.stringify(origin)})) continue;
+        if (href.includes('#') && href.split('#')[0] === window.location.href.split('#')[0]) continue;
+        if (href.replace(/\\/$/, '') === window.location.href.replace(/\\/$/, '')) continue;
+        if (skipRe.test(label) || skipRe.test(href)) continue;
+        const pathKey = new URL(href).pathname.replace(/\\/$/, '').toLowerCase();
+        const labelKey = label.toLowerCase();
+        if (seenKeys.has(labelKey) || (pathKey && seenKeys.has(pathKey))) continue;
+        seenKeys.add(labelKey);
+        if (pathKey) seenKeys.add(pathKey);
+        const inNav = !!a.closest('header, nav');
+        const score = (inNav ? 14 : 2) + (priorityRe.test(label) || priorityRe.test(href) ? 25 : 0);
+        navLinks.push({ kind: 'href', label, href, score });
+      }
+
+      const navButtons = [];
+      const buttons = Array.from(document.querySelectorAll('header button, nav button'));
+      for (const b of buttons) {
+        const label = (b.innerText || '').replace(/\\s+/g, ' ').trim();
+        if (!label || label.length < 3 || label.length > 36) continue;
+        if (skipRe.test(label)) continue;
+        const labelKey = label.toLowerCase();
+        const slugPath = '/' + labelKey.replace(/[^a-z0-9]+/g, '-');
+        if (seenKeys.has(labelKey) || seenKeys.has(slugPath)) continue;
+        seenKeys.add(labelKey);
+        seenKeys.add(slugPath);
+        const score = 18 + (priorityRe.test(label) ? 25 : 0);
+        navButtons.push({ kind: 'button', label, score });
+      }
+
       return {
-        title: document.title || '',
-        headings,
-        bodyExcerpt: ((document.body && document.body.innerText) || '').replace(/\\s+/g, ' ').trim().slice(0, 1500),
         fonts,
         accents,
-        faviconUrl
+        faviconUrl,
+        navTargets: [...navButtons, ...navLinks].sort((a, b) => b.score - a.score).slice(0, 5)
       };
     })()`;
 
-    let renderedTitle = '';
-    let renderedHeadings: string[] = [];
-    let renderedBodyExcerpt = '';
+    const homePageContent = await extractPageContent();
     let computedFonts: string[] = [];
     let computedAccentColors: string[] = [];
     let faviconUrl: string | undefined;
+    let navTargets: Array<{ kind: 'href' | 'button'; label: string; href?: string }> = [];
 
     try {
       const domRes = await sendCdp('Runtime.evaluate', {
@@ -330,18 +396,16 @@ async function captureViaSmartCdp(
       });
       const v = domRes?.result?.value;
       if (v) {
-        renderedTitle = v.title || '';
-        renderedHeadings = Array.isArray(v.headings) ? v.headings : [];
-        renderedBodyExcerpt = v.bodyExcerpt || '';
         computedFonts = Array.isArray(v.fonts) ? v.fonts : [];
         computedAccentColors = Array.isArray(v.accents) ? v.accents : [];
         if (v.faviconUrl) faviconUrl = v.faviconUrl;
+        if (Array.isArray(v.navTargets)) navTargets = v.navTargets;
       }
     } catch {
       // keep defaults
     }
 
-    // 6. Capture Crisp Desktop (1440x900) Screenshot
+    // 4. Capture Homepage Desktop Screenshot (1440x900)
     let desktopOk = false;
     try {
       const deskCap = await sendCdp('Page.captureScreenshot', { format: 'png' });
@@ -353,7 +417,86 @@ async function captureViaSmartCdp(
       desktopOk = false;
     }
 
-    // 7. Resize to Mobile (430x932), let responsive layout reflow, & capture Mobile Screenshot
+    const crawledPages: CrawledPageInsight[] = [
+      {
+        label: 'Home',
+        path: '/',
+        title: homePageContent.title || 'Home',
+        headings: homePageContent.headings,
+        excerpt: homePageContent.excerpt,
+        screenshotUrl: desktopOk ? `/api/media/${desktopFilename}` : undefined,
+      },
+    ];
+
+    // 5. Multi-Page Deep Site Crawl (Up to 4 Top Internal Pages / SPA Views!)
+    for (let i = 0; i < navTargets.length; i++) {
+      const target = navTargets[i];
+      try {
+        const beforeText = (await extractPageContent()).excerpt.slice(0, 120);
+        let pagePath = `/${target.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+        if (target.kind === 'href' && target.href) {
+          pagePath = new URL(target.href).pathname || '/';
+          await sendCdp('Page.navigate', { url: target.href });
+          await waitForHydration(7000);
+        } else {
+          // Click SPA nav button cleanly & scroll to top
+          await sendCdp('Runtime.evaluate', {
+            expression: `(() => {
+              const btns = Array.from(document.querySelectorAll('header button, nav button'));
+              const match = btns.find(b => (b.innerText || '').replace(/\\s+/g, ' ').trim().toLowerCase() === ${JSON.stringify(target.label.toLowerCase())});
+              if (match) { match.click(); window.scrollTo(0, 0); return true; }
+              return false;
+            })()`,
+            returnByValue: true,
+          });
+          await sleep(1400);
+          await waitForHydration(5000);
+          pagePath = `nav:${target.label}`;
+        }
+
+        const subContent = await extractPageContent();
+        const contentSig = `${subContent.headings[0] || ''}|${subContent.excerpt.slice(0, 140)}`;
+        const alreadySeen = crawledPages.some(
+          (p) => `${p.headings[0] || ''}|${p.excerpt.slice(0, 140)}` === contentSig
+        );
+        // Skip duplicate if page content didn't actually change or duplicates an already captured page
+        if (
+          subContent.excerpt.length < 60 ||
+          alreadySeen ||
+          (subContent.excerpt.slice(0, 120) === beforeText && target.kind === 'button')
+        ) {
+          continue;
+        }
+
+        const pageSlug = target.label.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 20);
+        const subFilename = `scan_page_${slugSafe}_${pageSlug}_${token}.png`;
+        const subPath = path.join(MEDIA_DIR, subFilename);
+        let subShotOk = false;
+        try {
+          const subCap = await sendCdp('Page.captureScreenshot', { format: 'png' });
+          if (subCap?.data) {
+            fs.writeFileSync(subPath, Buffer.from(subCap.data, 'base64'));
+            subShotOk = fs.statSync(subPath).size > 2000;
+          }
+        } catch {
+          subShotOk = false;
+        }
+
+        crawledPages.push({
+          label: target.label,
+          path: pagePath,
+          title: subContent.title || target.label,
+          headings: subContent.headings,
+          excerpt: subContent.excerpt,
+          screenshotUrl: subShotOk ? `/api/media/${subFilename}` : undefined,
+        });
+      } catch {
+        // Continue to next page even if one sub-page times out
+      }
+    }
+
+    // 6. Navigate back to Homepage & Capture Responsive Mobile Hero (430x932)
     let mobileOk = false;
     try {
       await sendCdp('Emulation.setDeviceMetricsOverride', {
@@ -362,7 +505,8 @@ async function captureViaSmartCdp(
         deviceScaleFactor: 1,
         mobile: true,
       });
-      await sleep(750);
+      await sendCdp('Page.navigate', { url: targetUrl });
+      await waitForHydration(8000);
       const mobCap = await sendCdp('Page.captureScreenshot', { format: 'png' });
       if (mobCap?.data) {
         fs.writeFileSync(mobileOutFile, Buffer.from(mobCap.data, 'base64'));
@@ -375,12 +519,13 @@ async function captureViaSmartCdp(
     return {
       desktopOk,
       mobileOk,
-      renderedTitle,
-      renderedHeadings,
-      renderedBodyExcerpt,
+      renderedTitle: homePageContent.title,
+      renderedHeadings: homePageContent.headings,
+      renderedBodyExcerpt: homePageContent.excerpt,
       computedFonts,
       computedAccentColors,
       faviconUrl,
+      crawledPages,
     };
   } finally {
     try {
@@ -389,7 +534,6 @@ async function captureViaSmartCdp(
     try {
       proc.kill('SIGKILL');
     } catch {}
-    // Best-effort cleanup of temp Chrome profile
     setTimeout(() => {
       try {
         fs.rmSync(userDataDir, { recursive: true, force: true });
@@ -502,6 +646,7 @@ export interface BrandScanResult {
   description: string;
   visualVibe: string;
   suggestedHook: string;
+  crawledPages: CrawledPageInsight[];
   summaryText: string;
   error?: string;
 }
@@ -528,6 +673,7 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
       description: '',
       visualVibe: '',
       suggestedHook: '',
+      crawledPages: [],
       summaryText: rawUrl,
       error: 'Please enter a valid public http(s) website URL.',
     };
@@ -545,11 +691,18 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
 
   const browserPath = findBrowserExecutable();
 
-  // Run HTML scrape + Smart CDP Live Browser Render (waits for SPA boot/splash loaders!) in parallel
   const [scraped, cdp] = await Promise.all([
     scrapeUrlContext(parsed.toString()),
     browserPath
-      ? captureViaSmartCdp(browserPath, parsed.toString(), desktopPath, mobilePath).catch((err) => {
+      ? captureViaSmartCdp(
+          browserPath,
+          parsed.toString(),
+          slugSafe,
+          token,
+          desktopPath,
+          mobilePath,
+          desktopFilename
+        ).catch((err) => {
           console.warn('[brand-scan] Smart CDP failed:', err);
           return {
             desktopOk: false,
@@ -557,6 +710,7 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
             renderedHeadings: [],
             computedFonts: [],
             computedAccentColors: [],
+            crawledPages: [],
           } as CdpCaptureResult;
         })
       : Promise.resolve({
@@ -565,10 +719,10 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
           renderedHeadings: [],
           computedFonts: [],
           computedAccentColors: [],
+          crawledPages: [],
         } as CdpCaptureResult),
   ]);
 
-  // Extract visual palette from the real hydrated Desktop screenshot, enriched with computed DOM button accent colors!
   let palette: ExtractedPalette = {
     primary: cdp.computedAccentColors[0] || '#E8192C',
     secondary: cdp.computedAccentColors[1] || '#06B6D4',
@@ -583,7 +737,6 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
   if (cdp.desktopOk) {
     const extracted = await extractPaletteFromPng(desktopPath);
     if (extracted) {
-      // Prefer real CSS button/CTA accent color from live DOM as primary when detected!
       const primary = cdp.computedAccentColors[0] || extracted.primary;
       const secondary = cdp.computedAccentColors[1] || extracted.secondary;
       const mergedSwatches: string[] = [];
@@ -601,10 +754,18 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
     }
   }
 
-  // Merge live hydrated headings & title (works on client-side React/Next SPAs!)
   const bestTitle = cdp.renderedTitle || scraped.title || domain;
-  const bestHeadings = cdp.renderedHeadings.length > 0 ? cdp.renderedHeadings : scraped.headings;
-  const bestDescription = scraped.description || bestHeadings[0] || (cdp.renderedBodyExcerpt || '').slice(0, 180);
+  const allHeadings: string[] = [];
+  for (const h of [
+    ...cdp.renderedHeadings,
+    ...cdp.crawledPages.flatMap((p) => p.headings),
+    ...scraped.headings,
+  ]) {
+    if (h && !allHeadings.includes(h)) allHeadings.push(h);
+    if (allHeadings.length >= 14) break;
+  }
+
+  const bestDescription = scraped.description || allHeadings[0] || (cdp.renderedBodyExcerpt || '').slice(0, 180);
 
   const rawBrand = bestTitle.split(/[|\-–—:·]/)[0].trim();
   const brandName =
@@ -612,8 +773,8 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
       ? rawBrand
       : domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
 
-  let visualVibe = `Live rendered ${scraped.siteType} experience anchored by ${palette.primary} & ${palette.secondary}`;
-  let suggestedHook = bestHeadings[0] || bestDescription || `Discover ${brandName} — built to stand out.`;
+  let visualVibe = `Full-site (${cdp.crawledPages.length || 1} pages) ${scraped.siteType} brand anchored by ${palette.primary} & ${palette.secondary}`;
+  let suggestedHook = allHeadings[0] || bestDescription || `Discover ${brandName} — built to stand out.`;
 
   if (cdp.desktopOk) {
     try {
@@ -629,6 +790,12 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
   }
 
   const fonts = cdp.computedFonts.length > 0 ? cdp.computedFonts : ['Plus Jakarta Sans', 'Inter'];
+
+  // Assemble the Full-Site Multi-Page Brand Dossier for AI Campaign Synthesis!
+  const pageDossierLines = cdp.crawledPages.map(
+    (p) =>
+      `[PAGE: ${p.label} (${p.path})]\nHeadings: ${p.headings.slice(0, 4).join(' | ')}\nKey Copy: ${p.excerpt.slice(0, 360)}`
+  );
 
   return {
     ok: true,
@@ -647,18 +814,18 @@ export async function runFullWebsiteBrandScan(rawUrl: string): Promise<BrandScan
     faviconUrl: cdp.faviconUrl || `${parsed.origin}/favicon.ico`,
     palette,
     fonts,
-    headings: bestHeadings,
+    headings: allHeadings,
     description: bestDescription,
     visualVibe,
     suggestedHook,
+    crawledPages: cdp.crawledPages,
     summaryText: [
-      `Brand Scanned (Live Hydrated SPA): ${brandName} (${parsed.toString()})`,
+      `Full-Site Multi-Page Brand Dossier (${cdp.crawledPages.length} pages crawled): ${brandName} (${parsed.toString()})`,
       `Brand Colors: Primary ${palette.primary}, Secondary ${palette.secondary}, Background ${palette.background}`,
       `Typography: ${fonts.join(', ')}`,
-      bestHeadings.length > 0 ? `Live Headings: ${bestHeadings.join(' | ')}` : '',
-      cdp.renderedBodyExcerpt ? `Live Rendered Copy: ${cdp.renderedBodyExcerpt.slice(0, 900)}` : scraped.summaryText,
+      ...pageDossierLines,
     ]
       .filter(Boolean)
-      .join('\n'),
+      .join('\n\n'),
   };
 }
