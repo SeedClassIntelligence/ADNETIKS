@@ -27,7 +27,25 @@ import {
   X,
   UserCheck,
   ExternalLink,
+  ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
+
+export type ImpeccableDirective = 'default' | 'distill' | 'bolder' | 'quieter' | 'typeset' | 'polish';
+
+export interface ImpeccableCraftAudit {
+  score: number;
+  grade: 'Impeccable' | 'Strong' | 'Needs Polish' | 'AI Slop Alert';
+  headlineWords: number;
+  estimatedTextDensityPct: number;
+  flaggedCliches: string[];
+  findings: Array<{
+    severity: 'P0' | 'P1' | 'P2';
+    category: string;
+    message: string;
+  }>;
+  directiveApplied: ImpeccableDirective;
+}
 
 export interface EditableAdItem {
   id: string;
@@ -43,6 +61,8 @@ export interface EditableAdItem {
   visualPrompt: string;
   imageUrl: string;
   visualSource: 'gemini_ai_photo' | 'openai_ai_photo' | 'adnetiks_editorial_studio' | 'user_uploaded';
+  impeccableDirective?: ImpeccableDirective;
+  craftAudit?: ImpeccableCraftAudit;
   oldWayPoints?: string[];
   newWayPoints?: string[];
 }
@@ -92,6 +112,9 @@ export default function HighEndAdSetStudio({
   const [activeFonts, setActiveFonts] = useState(brandProfile.brandFonts);
   const [regeneratingAdId, setRegeneratingAdId] = useState<string | null>(null);
   const [editingPromptAdId, setEditingPromptAdId] = useState<string | null>(null);
+  const [campaignDirective, setCampaignDirective] = useState<ImpeccableDirective>('default');
+  const [expandedAuditAdId, setExpandedAuditAdId] = useState<string | null>(null);
+  const [directingAdKey, setDirectingAdKey] = useState<string | null>(null);
 
   const fetchAiStatus = async () => {
     try {
@@ -189,6 +212,7 @@ export default function HighEndAdSetStudio({
           offerBrief: offerBrief.trim() || undefined,
           likenessImageDataUrl: likenessPreview.startsWith('data:image/') ? likenessPreview : undefined,
           likenessImageUrl: likenessPreview.startsWith('/api/media/') ? likenessPreview : undefined,
+          impeccableDirective: campaignDirective,
           brandColors: activePalette || brandProfile.brandColors,
           brandFonts: activeFonts || brandProfile.brandFonts,
           targetAudience: {
@@ -288,6 +312,7 @@ export default function HighEndAdSetStudio({
           palette: activePalette || brandProfile.brandColors,
           fonts: activeFonts || brandProfile.brandFonts,
           likenessImageUrl: likenessPreview || undefined,
+          impeccableDirective: ad.impeccableDirective || campaignDirective,
           oldWayPoints: ad.oldWayPoints,
           newWayPoints: ad.newWayPoints,
         }),
@@ -310,6 +335,39 @@ export default function HighEndAdSetStudio({
       }
     } finally {
       setRegeneratingAdId(null);
+    }
+  };
+
+  const handleApplyImpeccableDirective = async (
+    ad: EditableAdItem,
+    directive: ImpeccableDirective
+  ) => {
+    const key = `${ad.id}:${directive}`;
+    setDirectingAdKey(key);
+    try {
+      const res = await fetch('/api/impeccable-direct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          directive,
+          brandName: brandNameInput || brandProfile.name,
+          websiteUrl: ad.destinationUrl || websiteUrl,
+          palette: activePalette || brandProfile.brandColors,
+          fonts: activeFonts || brandProfile.brandFonts,
+          likenessImageUrl: likenessPreview || undefined,
+          ad,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.ok && data.ad) {
+        setAdSet((prev) => prev.map((item) => (item.id === ad.id ? data.ad : item)));
+        showNotificationToast(
+          `Impeccable "${directive}" Applied`,
+          `Updated visual & copy for ${ad.slotLabel} · Craft Score: ${data.craftAudit?.score ?? 95}/100 (${data.craftAudit?.grade || 'Impeccable'}).`
+        );
+      }
+    } finally {
+      setDirectingAdKey(null);
     }
   };
 
@@ -552,6 +610,40 @@ export default function HighEndAdSetStudio({
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#09090D] border border-[#282838] text-xs text-white placeholder-[#5B5B78] focus:outline-none focus:border-red-500"
               />
             </div>
+
+            {/* Impeccable Creative Direction Preset Bar */}
+            <div className="pt-1 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  Impeccable Art Direction <span className="text-[#6E6E8A] font-normal">(anti-slop aesthetic &amp; typography rules)</span>
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(
+                  [
+                    { id: 'default', label: 'Balanced Studio' },
+                    { id: 'distill', label: 'Distill · Ultra-Minimal' },
+                    { id: 'bolder', label: 'Bolder · Swiss Poster' },
+                    { id: 'quieter', label: 'Quieter · Luxury Calm' },
+                    { id: 'typeset', label: 'Typeset · Magazine' },
+                  ] as const
+                ).map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setCampaignDirective(preset.id)}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
+                      campaignDirective === preset.id
+                        ? 'bg-white text-[#0A0A0C] border-white font-bold'
+                        : 'bg-[#0A0A0E] text-[#9A9AB6] border-[#262636] hover:text-white hover:border-[#3A3A50]'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Right 4 cols: Personal Likeness / Product Photo Upload Box */}
@@ -701,24 +793,79 @@ export default function HighEndAdSetStudio({
                       {ad.platform} · {ad.aspectRatio}
                     </span>
                   </div>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase ${
-                      ad.visualSource === 'gemini_ai_photo' || ad.visualSource === 'openai_ai_photo'
-                        ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-700/60'
+                  <div className="flex items-center gap-1.5">
+                    {ad.craftAudit && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedAuditAdId(expandedAuditAdId === ad.id ? null : ad.id)
+                        }
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold flex items-center gap-1 border cursor-pointer transition-colors ${
+                          ad.craftAudit.score >= 90
+                            ? 'bg-emerald-950/70 text-emerald-300 border-emerald-700/60 hover:bg-emerald-900/70'
+                            : ad.craftAudit.score >= 78
+                            ? 'bg-cyan-950/70 text-cyan-300 border-cyan-700/60'
+                            : 'bg-amber-950/70 text-amber-300 border-amber-700/60'
+                        }`}
+                        title="Click to inspect Impeccable Slop Detector audit"
+                      >
+                        <ShieldCheck className="w-3 h-3" />
+                        <span>
+                          {ad.craftAudit.score}/100 · ~{ad.craftAudit.estimatedTextDensityPct}% txt
+                        </span>
+                      </button>
+                    )}
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase ${
+                        ad.visualSource === 'gemini_ai_photo' || ad.visualSource === 'openai_ai_photo'
+                          ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-700/60'
+                          : ad.visualSource === 'user_uploaded'
+                          ? 'bg-cyan-950/70 text-cyan-300 border border-cyan-700/60'
+                          : 'bg-slate-900 text-slate-300 border border-slate-700'
+                      }`}
+                    >
+                      {ad.visualSource === 'gemini_ai_photo'
+                        ? 'Gemini AI Photo'
+                        : ad.visualSource === 'openai_ai_photo'
+                        ? 'OpenAI AI Photo'
                         : ad.visualSource === 'user_uploaded'
-                        ? 'bg-cyan-950/70 text-cyan-300 border border-cyan-700/60'
-                        : 'bg-slate-900 text-slate-300 border border-slate-700'
-                    }`}
-                  >
-                    {ad.visualSource === 'gemini_ai_photo'
-                      ? 'Gemini AI Photo'
-                      : ad.visualSource === 'openai_ai_photo'
-                      ? 'OpenAI AI Photo'
-                      : ad.visualSource === 'user_uploaded'
-                      ? 'Your Custom Photo'
-                      : 'Brand Studio PNG'}
-                  </span>
+                        ? 'Your Photo'
+                        : 'Editorial PNG'}
+                    </span>
+                  </div>
                 </div>
+
+                {/* Collapsible Impeccable Slop Detector Audit Panel */}
+                {expandedAuditAdId === ad.id && ad.craftAudit && (
+                  <div className="px-4 py-3 bg-[#0C0C12] border-b border-[#1E1E2B] space-y-2 text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        Impeccable Slop Audit: <span className="text-emerald-300">{ad.craftAudit.grade}</span>
+                      </span>
+                      <span className="font-mono text-[10px] text-[#8B8BA8]">
+                        {ad.craftAudit.headlineWords} headline words · {ad.craftAudit.directiveApplied} mode
+                      </span>
+                    </div>
+                    {ad.craftAudit.findings.length === 0 ? (
+                      <div className="text-emerald-300/90 text-[11px]">
+                        ✓ Zero AI cliché words detected · Clean headline length · Outcome-driven CTA · Algorithm-safe visual text density.
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {ad.craftAudit.findings.map((f, idx) => (
+                          <div key={idx} className="flex items-start gap-1.5 text-amber-200/90">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                            <span>
+                              <strong className="font-mono text-[10px] mr-1">[{f.severity}]</strong>
+                              {f.message}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Ad Creative Visual Preview (100% Unclipped) */}
                 <div className="relative bg-[#070B11] border-b border-[#1E1E2B] flex items-center justify-center min-h-[260px] max-h-[380px] overflow-hidden group">
@@ -751,6 +898,45 @@ export default function HighEndAdSetStudio({
                       <Download className="w-3.5 h-3.5 text-emerald-400" />
                       <span>PNG</span>
                     </a>
+                  </div>
+                </div>
+
+                {/* 1-Click Impeccable Art Direction Bar */}
+                <div className="px-4 py-2.5 bg-[#0C0C11] border-b border-[#1D1D2A] flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#8B8BA8]">
+                    Impeccable Direct:
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {(
+                      [
+                        { id: 'distill', label: 'Distill', tip: 'Strip visual & copy noise to minimal billboard' },
+                        { id: 'bolder', label: 'Bolder', tip: 'Oversized Swiss poster contrast & bold copy' },
+                        { id: 'quieter', label: 'Quieter', tip: 'Luxury calm editorial framing & understated tone' },
+                        { id: 'typeset', label: 'Typeset', tip: 'Magazine serif/sans editorial typography' },
+                        { id: 'polish', label: 'Polish', tip: 'Auto-fix AI clichés, weak CTAs & text density' },
+                      ] as const
+                    ).map((cmd) => {
+                      const isActive = ad.impeccableDirective === cmd.id;
+                      const isBusy = directingAdKey === `${ad.id}:${cmd.id}`;
+                      return (
+                        <button
+                          key={cmd.id}
+                          type="button"
+                          disabled={directingAdKey !== null}
+                          onClick={() => handleApplyImpeccableDirective(ad, cmd.id)}
+                          title={cmd.tip}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                            isActive
+                              ? 'bg-white text-[#0A0A0C]'
+                              : cmd.id === 'polish'
+                              ? 'bg-emerald-950/60 hover:bg-emerald-800/70 text-emerald-300 border border-emerald-700/50'
+                              : 'bg-[#171722] hover:bg-[#242436] text-slate-300 hover:text-white border border-[#262638]'
+                          }`}
+                        >
+                          {isBusy ? '...' : cmd.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

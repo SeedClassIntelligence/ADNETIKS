@@ -10,7 +10,7 @@ import fs from 'fs';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { handleGenerateContent, handleGenerateImage, handleDiscoverAvatars, handleGenerateAiVideo } from './api.ts';
 import { getLLMConfig, setRuntimeLLMConfig, getActiveImageProvider } from './llmProvider.ts';
-import { generateHighEndAdSet, regenerateSingleAdVisual } from './adSetEngine.ts';
+import { generateHighEndAdSet, regenerateSingleAdVisual, applyImpeccableDirectionToAd } from './adSetEngine.ts';
 import { loadWorkspace, saveWorkspace, saveDataUrlMedia, resolveMediaFile, listMediaFiles } from './storage.ts';
 import { scrapeUrlContext, analyzeImageVisual } from './ingest.ts';
 import {
@@ -129,6 +129,18 @@ export async function handleAdnetiksRequest(req: IncomingMessage, res: ServerRes
       sendJson(res, 200, result);
     } catch (err: any) {
       sendJson(res, 500, { ok: false, error: err.message || 'Single Ad Visual Error' });
+    }
+    return true;
+  }
+
+  // Impeccable Creative Direction & Slop-Fix Engine (POST /api/impeccable-direct)
+  if (url.startsWith('/api/impeccable-direct') && method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const result = await applyImpeccableDirectionToAd(body);
+      sendJson(res, 200, result);
+    } catch (err: any) {
+      sendJson(res, 500, { ok: false, error: err.message || 'Impeccable Direction Error' });
     }
     return true;
   }

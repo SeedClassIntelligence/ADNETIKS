@@ -21,6 +21,14 @@ import { scrapeUrlContext } from './ingest.ts';
 import { saveDataUrlMedia } from './storage.ts';
 import { generateBrandAdCreative, type AdCreativeStyle } from './adCreativeEngine.ts';
 import { recordUsageEvent } from './usageLedger.ts';
+import {
+  auditAdForSlop,
+  refineAdCopyByDirective,
+  getDirectivePhotoDirection,
+  IMPECCABLE_PHOTO_GUARDRAILS,
+  type ImpeccableDirective,
+  type ImpeccableCraftAudit,
+} from './impeccableAdEngine.ts';
 
 const MEDIA_DIR = path.resolve(process.cwd(), '.adnetiks-data', 'media');
 
@@ -38,6 +46,8 @@ export interface AdSetItem {
   visualPrompt: string;
   imageUrl: string;
   visualSource: 'gemini_ai_photo' | 'openai_ai_photo' | 'adnetiks_editorial_studio' | 'user_uploaded';
+  impeccableDirective?: ImpeccableDirective;
+  craftAudit?: ImpeccableCraftAudit;
   oldWayPoints?: string[];
   newWayPoints?: string[];
 }
@@ -50,6 +60,7 @@ export interface GenerateAdSetPayload {
   offerBrief?: string;
   likenessImageDataUrl?: string;
   likenessImageUrl?: string;
+  impeccableDirective?: ImpeccableDirective;
   brandColors?: {
     primary: string;
     secondary: string;
@@ -504,9 +515,21 @@ Return STRICTLY valid JSON:
         ];
   }
 
-  // 5. Render Real Visuals for ALL 4 Ads (Live AI Photo if API key exists, or Agency Editorial Studio PNG with user likeness!)
+  // 5. Apply Impeccable Creative Direction + Render Real Visuals + Deterministic Slop Audit for ALL 4 Ads
+  const activeDirective: ImpeccableDirective = payload.impeccableDirective || 'default';
   const finalAds: AdSetItem[] = await Promise.all(
-    draftedAds.map(async (ad, idx) => {
+    draftedAds.map(async (rawAd, idx) => {
+      const refined =
+        activeDirective !== 'default'
+          ? refineAdCopyByDirective(rawAd, activeDirective, brandName)
+          : {
+              headline: rawAd.headline,
+              primaryText: rawAd.primaryText,
+              ctaText: rawAd.ctaText,
+              visualPrompt: `${rawAd.visualPrompt}. ${IMPECCABLE_PHOTO_GUARDRAILS}`,
+            };
+      const ad = { ...rawAd, ...refined, impeccableDirective: activeDirective };
+
       // Ad 2 (Old Way vs New Way) works best as a crisp comparison graphic card; Ads 1, 3, 4 try Live AI Photography first!
       if (imageProvider && ad.creativeStyle !== 'old_vs_new') {
         const aiPhoto = await generateLiveAiPhoto(
@@ -520,11 +543,12 @@ Return STRICTLY valid JSON:
             ...ad,
             imageUrl: aiPhoto.imageUrl,
             visualSource: aiPhoto.source,
+            craftAudit: auditAdForSlop(ad),
           };
         }
       }
 
-      // Render crisp, algorithm-safe PNG ad creative (compositing user's likeness/product photo on Ads 1, 3, 4 if uploaded!)
+      // Render crisp, algorithm-safe PNG ad creative shaped by the Impeccable directive
       const rendered = await generateBrandAdCreative({
         brandName,
         domain: websiteDomain || destinationUrl,
@@ -540,12 +564,14 @@ Return STRICTLY valid JSON:
         oldWayPoints: ad.oldWayPoints,
         newWayPoints: ad.newWayPoints,
         subjectImageUrl: ad.creativeStyle !== 'old_vs_new' ? likenessUrl || undefined : undefined,
+        impeccableDirective: activeDirective,
       });
 
       return {
         ...ad,
         imageUrl: rendered.imageUrl,
         visualSource: 'adnetiks_editorial_studio',
+        craftAudit: auditAdForSlop(ad),
       };
     })
   );
@@ -581,12 +607,14 @@ export async function regenerateSingleAdVisual(payload: {
   palette?: { primary: string; secondary: string; background: string; swatches: string[] };
   fonts?: string[];
   likenessImageUrl?: string;
+  impeccableDirective?: ImpeccableDirective;
   oldWayPoints?: string[];
   newWayPoints?: string[];
 }) {
   if (payload.preferAiPhoto !== false && getActiveImageProvider() && payload.creativeStyle !== 'old_vs_new') {
+    const directedPrompt = `${payload.visualPrompt}. ${getDirectivePhotoDirection(payload.impeccableDirective || 'default')} ${IMPECCABLE_PHOTO_GUARDRAILS}`;
     const aiPhoto = await generateLiveAiPhoto(
-      payload.visualPrompt,
+      directedPrompt,
       payload.aspectRatio,
       payload.brandName,
       payload.likenessImageUrl
@@ -610,11 +638,111 @@ export async function regenerateSingleAdVisual(payload: {
     oldWayPoints: payload.oldWayPoints,
     newWayPoints: payload.newWayPoints,
     subjectImageUrl: payload.creativeStyle !== 'old_vs_new' ? payload.likenessImageUrl : undefined,
+    impeccableDirective: payload.impeccableDirective || 'default',
   });
 
   return {
     ok: true,
     imageUrl: rendered.imageUrl,
     visualSource: 'adnetiks_editorial_studio' as const,
+  };
+}
+
+/**
+ * 1-Click Impeccable Creative Direction Command (distill | bolder | quieter | typeset | polish)
+ * Reshapes the ad's copy, CTA, art direction prompt, AND re-renders its PNG visual using the
+ * chosen Impeccable aesthetic while computing a fresh deterministic Craft Audit score.
+ */
+export async function applyImpeccableDirectionToAd(payload: {
+  directive: ImpeccableDirective;
+  brandName: string;
+  websiteUrl?: string;
+  palette?: { primary: string; secondary: string; background: string; swatches: string[] };
+  fonts?: string[];
+  likenessImageUrl?: string;
+  ad: AdSetItem;
+}) {
+  const { directive, brandName, ad } = payload;
+  let updatedCopy = refineAdCopyByDirective(ad, directive, brandName);
+
+  // If live LLM key is configured, also ask the LLM to rewrite copy in that exact Impeccable tone!
+  const llm = getLLMConfig();
+  if (llm.apiKey || llm.provider === 'openai_compatible') {
+    const directiveRules: Record<ImpeccableDirective, string> = {
+      distill: 'Cut every unnecessary word. Headline max 5 razor-sharp words. Primary text max 2 crisp short sentences. Zero fluff.',
+      bolder: 'Make the headline fearless, unmistakable, and high-contrast (4-7 punchy words). Confident direct-response authority.',
+      quieter: 'Luxury editorial calm (Apple / Aesop / Linear). Understated confidence, zero exclamation marks, zero hype words, refined clarity.',
+      typeset: 'Editorial magazine voice (Financial Times / Stripe Press). Intelligent, rhythmic cadence, crisp contrast.',
+      polish: 'Remove every AI cliché word, sharpen the CTA to a concrete user outcome, break text into clean scannable lines.',
+      default: 'Clean direct-response advertising clarity.',
+    };
+    try {
+      const rewrittenRaw = await generateText(
+        `Apply the Impeccable "${directive}" directive to this ad for ${brandName}:\nHeadline: ${ad.headline}\nPrimary Copy: ${ad.primaryText}\nCTA: ${ad.ctaText}\nVisual Prompt: ${ad.visualPrompt}`,
+        `You are an Impeccable creative director. Rule for "${directive}": ${directiveRules[directive]}\nReturn ONLY valid JSON: {"headline":"...","primaryText":"...","ctaText":"...","visualPrompt":"..."}`
+      );
+      if (rewrittenRaw) {
+        const parsed = JSON.parse(rewrittenRaw);
+        if (parsed.headline && parsed.primaryText) {
+          updatedCopy = refineAdCopyByDirective(
+            {
+              headline: String(parsed.headline),
+              primaryText: String(parsed.primaryText),
+              ctaText: String(parsed.ctaText || updatedCopy.ctaText),
+              visualPrompt: String(parsed.visualPrompt || updatedCopy.visualPrompt),
+            },
+            directive,
+            brandName
+          );
+        }
+      }
+    } catch {
+      // keep deterministic Impeccable refinement
+    }
+  }
+
+  // Re-render visual in the chosen Impeccable aesthetic (or live AI photo if key is active)
+  // Note: When user clicks distill/bolder/quieter/typeset on a non-old_vs_new card without an image API key,
+  // switch creativeStyle to editorial_hook so the Impeccable visual design system renders visibly!
+  const effectiveStyle: AdCreativeStyle =
+    ad.creativeStyle === 'old_vs_new' && directive === 'polish'
+      ? 'old_vs_new'
+      : ad.creativeStyle === 'old_vs_new'
+      ? 'editorial_hook'
+      : ad.creativeStyle;
+
+  const visualResp = await regenerateSingleAdVisual({
+    brandName,
+    websiteUrl: payload.websiteUrl || ad.destinationUrl,
+    headline: updatedCopy.headline,
+    primaryText: updatedCopy.primaryText,
+    ctaText: updatedCopy.ctaText,
+    angleTag: ad.angleTag,
+    visualPrompt: updatedCopy.visualPrompt,
+    aspectRatio: ad.aspectRatio,
+    creativeStyle: effectiveStyle,
+    palette: payload.palette,
+    fonts: payload.fonts,
+    likenessImageUrl: payload.likenessImageUrl,
+    impeccableDirective: directive,
+    oldWayPoints: ad.oldWayPoints,
+    newWayPoints: ad.newWayPoints,
+  });
+
+  const nextAd: AdSetItem = {
+    ...ad,
+    ...updatedCopy,
+    creativeStyle: effectiveStyle,
+    impeccableDirective: directive,
+    imageUrl: visualResp.imageUrl,
+    visualSource: visualResp.visualSource,
+  };
+  nextAd.craftAudit = auditAdForSlop(nextAd);
+
+  return {
+    ok: true,
+    directive,
+    ad: nextAd,
+    craftAudit: nextAd.craftAudit,
   };
 }

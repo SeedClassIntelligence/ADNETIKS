@@ -14,6 +14,7 @@ import crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { recordUsageEvent } from './usageLedger.ts';
+import type { ImpeccableDirective } from './impeccableAdEngine.ts';
 
 const execFileAsync = promisify(execFile);
 const MEDIA_DIR = path.resolve(process.cwd(), '.adnetiks-data', 'media');
@@ -40,6 +41,7 @@ export interface BrandAdCreativeOptions {
   oldWayPoints?: string[];
   newWayPoints?: string[];
   subjectImageUrl?: string;
+  impeccableDirective?: ImpeccableDirective;
 }
 
 export interface BrandAdCreativeResult {
@@ -161,6 +163,7 @@ function buildCreativeHtml(opts: BrandAdCreativeOptions, width: number, height: 
   const subheadline = escapeHtml(trimWords(opts.subheadline || opts.tagline || '', 115));
   const ctaText = escapeHtml(trimWords(opts.ctaText || 'Compare Now', 26));
   const style: AdCreativeStyle = opts.style || (opts.aspectRatio === '9:16' ? 'social_story' : 'editorial_hook');
+  const directive: ImpeccableDirective = opts.impeccableDirective || 'default';
 
   const oldWay = (opts.oldWayPoints && opts.oldWayPoints.length > 0
     ? opts.oldWayPoints
@@ -330,6 +333,110 @@ function buildCreativeHtml(opts: BrandAdCreativeOptions, width: number, height: 
         </div>
       </div>
     `;
+  } else if (directive === 'distill') {
+    // IMPECCABLE: DISTILL — Pure minimalist billboard (zero pills, zero grid, zero rings, 60%+ negative space)
+    bodyInner = `
+      <div style="display:flex;flex-direction:column;justify-content:space-between;height:100%;position:relative;z-index:2;padding:18px 12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:${isWide ? 22 : 26}px;font-weight:800;letter-spacing:-0.02em;color:rgba(255,255,255,0.92);">${brandName}</div>
+          ${domain ? `<div style="font-size:${isWide ? 17 : 20}px;color:rgba(255,255,255,0.48);font-weight:500;">${domain}</div>` : ''}
+        </div>
+        <div style="max-width:86%;margin:auto 0;">
+          <h1 style="margin:0;font-size:${isWide ? 68 : isPortrait ? 92 : 82}px;line-height:1.02;font-weight:800;letter-spacing:-0.04em;color:#FFFFFF;">
+            ${headline}
+          </h1>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:inline-flex;align-items:center;gap:14px;padding:${isWide ? '16px 32px' : '20px 38px'};border-radius:12px;background:${primary};color:${ctaTextColor};font-size:${isWide ? 22 : 26}px;font-weight:800;">
+            <span>${ctaText}</span><span>→</span>
+          </div>
+          <div style="width:64px;height:4px;background:${primary};"></div>
+        </div>
+      </div>
+    `;
+  } else if (directive === 'bolder') {
+    // IMPECCABLE: BOLDER — High-contrast Swiss Editorial Poster with decisive color block
+    bodyInner = `
+      <div style="position:absolute;left:0;top:0;bottom:0;width:28px;background:${primary};z-index:2;"></div>
+      <div style="display:flex;flex-direction:column;justify-content:space-between;height:100%;position:relative;z-index:2;padding-left:24px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid rgba(255,255,255,0.16);padding-bottom:20px;">
+          <div style="font-size:${isWide ? 20 : 24}px;font-weight:900;letter-spacing:0.14em;text-transform:uppercase;color:#FFFFFF;">${brandName}</div>
+          <div style="font-size:${isWide ? 16 : 19}px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:${primary};">${domain || eyebrow}</div>
+        </div>
+        <div style="margin:auto 0;display:flex;flex-direction:column;gap:24px;">
+          <h1 style="margin:0;font-size:${isWide ? 72 : isPortrait ? 98 : 88}px;line-height:0.98;font-weight:950;letter-spacing:-0.045em;color:#FFFFFF;text-transform:none;">
+            ${headline}
+          </h1>
+          ${
+            subheadline
+              ? `<p style="margin:0;font-size:${isWide ? 24 : 30}px;line-height:1.35;color:rgba(255,255,255,0.85);font-weight:600;max-width:84%;">${subheadline}</p>`
+              : ''
+          }
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;background:${primary};color:${ctaTextColor};padding:${isWide ? '20px 34px' : '26px 40px'};border-radius:14px;">
+          <span style="font-size:${isWide ? 24 : 30}px;font-weight:900;letter-spacing:-0.02em;">${ctaText}</span>
+          <span style="font-size:${isWide ? 26 : 32}px;font-weight:900;">→</span>
+        </div>
+      </div>
+    `;
+  } else if (directive === 'quieter') {
+    // IMPECCABLE: QUIETER — Luxury Editorial Calm (Aesop / Porsche / Stripe Press aesthetic)
+    bodyInner = `
+      <div style="position:absolute;inset:36px;border:1px solid rgba(255,255,255,0.12);pointer-events:none;z-index:2;"></div>
+      <div style="display:flex;flex-direction:column;justify-content:space-between;height:100%;position:relative;z-index:2;padding:32px 28px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="width:8px;height:8px;border-radius:999px;background:${primary};"></span>
+            <span style="font-size:${isWide ? 17 : 20}px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.78);">${brandName}</span>
+          </div>
+          ${domain ? `<span style="font-size:${isWide ? 15 : 18}px;color:rgba(255,255,255,0.42);font-weight:400;letter-spacing:0.04em;">${domain}</span>` : ''}
+        </div>
+        <div style="max-width:82%;margin:auto 0;display:flex;flex-direction:column;gap:26px;">
+          <h1 style="margin:0;font-size:${isWide ? 54 : isPortrait ? 74 : 64}px;line-height:1.1;font-weight:500;letter-spacing:-0.03em;color:#F8F8FA;">
+            ${headline}
+          </h1>
+          ${
+            subheadline
+              ? `<p style="margin:0;font-size:${isWide ? 21 : 25}px;line-height:1.5;color:rgba(255,255,255,0.62);font-weight:400;max-width:86%;">${subheadline}</p>`
+              : ''
+          }
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-top:24px;border-top:1px solid rgba(255,255,255,0.1);">
+          <div style="font-size:${isWide ? 20 : 24}px;font-weight:600;color:#FFFFFF;display:inline-flex;align-items:center;gap:12px;">
+            <span>${ctaText}</span>
+            <span style="color:${primary};">→</span>
+          </div>
+          <div style="font-size:${isWide ? 14 : 16}px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.4);">PRIVATE · DIRECT</div>
+        </div>
+      </div>
+    `;
+  } else if (directive === 'typeset') {
+    // IMPECCABLE: TYPESET — Magazine Editorial Serif/Sans Pairing & Hairline Grid
+    bodyInner = `
+      <div style="display:flex;flex-direction:column;justify-content:space-between;height:100%;position:relative;z-index:2;padding:10px 8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,0.2);">
+          <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:${isWide ? 15 : 18}px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.7);">01 / ${brandName}</span>
+          <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:${isWide ? 14 : 17}px;letter-spacing:0.1em;color:${primary};">${domain || eyebrow}</span>
+        </div>
+        <div style="margin:auto 0;max-width:90%;display:flex;flex-direction:column;gap:28px;">
+          <h1 style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:${isWide ? 64 : isPortrait ? 86 : 76}px;line-height:1.04;font-weight:700;letter-spacing:-0.025em;color:#FFFFFF;">
+            ${headline}
+          </h1>
+          <div style="width:120px;height:2px;background:${primary};"></div>
+          ${
+            subheadline
+              ? `<p style="margin:0;font-size:${isWide ? 22 : 27}px;line-height:1.45;color:rgba(255,255,255,0.74);font-weight:400;max-width:85%;">${subheadline}</p>`
+              : ''
+          }
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-top:20px;border-top:1px solid rgba(255,255,255,0.2);">
+          <div style="display:inline-flex;align-items:center;gap:14px;padding:${isWide ? '14px 30px' : '18px 36px'};border-radius:4px;background:${primary};color:${ctaTextColor};font-size:${isWide ? 20 : 24}px;font-weight:800;letter-spacing:0.02em;">
+            <span>${ctaText}</span><span>→</span>
+          </div>
+          <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:${isWide ? 15 : 18}px;color:rgba(255,255,255,0.5);">${brandName.toUpperCase()}</span>
+        </div>
+      </div>
+    `;
   } else {
     // Editorial Bold-Statement Hook & Vertical 9:16 Social Story (ultra-clean, <16% text ratio)
     bodyInner = `
@@ -368,6 +475,16 @@ function buildCreativeHtml(opts: BrandAdCreativeOptions, width: number, height: 
     `;
   }
 
+  const isCleanMinimalCanvas = directive === 'distill' || directive === 'quieter' || directive === 'typeset';
+  const canvasBackground =
+    directive === 'quieter'
+      ? `linear-gradient(160deg, #111215 0%, #090A0C 100%)`
+      : directive === 'distill'
+      ? `radial-gradient(circle at 90% 10%, rgba(${pr},${pg},${pb},0.22) 0%, transparent 45%), #090B0E`
+      : directive === 'typeset'
+      ? `linear-gradient(155deg, ${bg} 0%, #0A0C10 100%)`
+      : `radial-gradient(circle at 86% 16%, rgba(${pr},${pg},${pb},0.42) 0%, rgba(${pr},${pg},${pb},0) 48%), radial-gradient(circle at 14% 88%, rgba(${sr},${sg},${sb},0.28) 0%, rgba(${sr},${sg},${sb},0) 46%), linear-gradient(145deg, ${bg} 0%, #070B11 100%)`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -389,12 +506,10 @@ function buildCreativeHtml(opts: BrandAdCreativeOptions, width: number, height: 
     width: ${width}px;
     height: ${height}px;
     padding: ${padY}px ${padX}px;
-    background:
-      radial-gradient(circle at 86% 16%, rgba(${pr},${pg},${pb},0.42) 0%, rgba(${pr},${pg},${pb},0) 48%),
-      radial-gradient(circle at 14% 88%, rgba(${sr},${sg},${sb},0.28) 0%, rgba(${sr},${sg},${sb},0) 46%),
-      linear-gradient(145deg, ${bg} 0%, #070B11 100%);
+    background: ${canvasBackground};
   }
   .grid-overlay {
+    display: ${isCleanMinimalCanvas ? 'none' : 'block'};
     position: absolute;
     inset: 0;
     background-image:
@@ -405,6 +520,7 @@ function buildCreativeHtml(opts: BrandAdCreativeOptions, width: number, height: 
     z-index: 1;
   }
   .ring {
+    display: ${isCleanMinimalCanvas || directive === 'bolder' ? 'none' : 'block'};
     position: absolute;
     right: -120px;
     bottom: -140px;
@@ -469,6 +585,7 @@ export async function generateBrandAdCreative(
 
   if (browserPath) {
     const tmpHtml = path.join(os.tmpdir(), `adnetiks_creative_${stamp}.html`);
+    const tmpProfileDir = path.join(os.tmpdir(), `adnetiks_chrome_${stamp}`);
     const fileName = `creative_${slug}_${style}_${stamp}.png`;
     const outPath = path.join(MEDIA_DIR, fileName);
     try {
@@ -482,12 +599,13 @@ export async function generateBrandAdCreative(
           '--disable-gpu',
           '--no-sandbox',
           '--hide-scrollbars',
+          `--user-data-dir=${tmpProfileDir}`,
           '--force-device-scale-factor=1',
           `--window-size=${width},${height}`,
           `--screenshot=${outPath}`,
           fileUrl,
         ],
-        { timeout: 15000 }
+        { timeout: 18000 }
       );
       if (fs.existsSync(outPath) && fs.statSync(outPath).size > 2500) {
         recordUsageEvent({
@@ -511,6 +629,7 @@ export async function generateBrandAdCreative(
     } finally {
       try {
         if (fs.existsSync(tmpHtml)) fs.unlinkSync(tmpHtml);
+        if (fs.existsSync(tmpProfileDir)) fs.rmSync(tmpProfileDir, { recursive: true, force: true });
       } catch {
         // ignore cleanup error
       }
