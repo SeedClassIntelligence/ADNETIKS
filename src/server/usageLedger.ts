@@ -20,6 +20,7 @@ export type UsageOperation =
   | 'generate_image'
   | 'vision_analyze'
   | 'brand_scan'
+  | 'tts_voice'
   | 'llm_text';
 
 export interface UsageEntry {
@@ -37,6 +38,7 @@ export interface UsageEntry {
 
 interface UsageStore {
   entries: UsageEntry[];
+  dailyBudgetUsd?: number;
 }
 
 // Per-1M-token USD pricing table (Input / Output)
@@ -128,14 +130,59 @@ export function recordUsageEvent(input: {
 }
 
 export function clearUsageLedger(): void {
-  saveStore({ entries: [] });
+  const existing = loadStore();
+  saveStore({ entries: [], dailyBudgetUsd: existing.dailyBudgetUsd });
+}
+
+export function getDailyBudgetUsd(): number {
+  const store = loadStore();
+  if (typeof store.dailyBudgetUsd === 'number' && !Number.isNaN(store.dailyBudgetUsd) && store.dailyBudgetUsd >= 0) {
+    return store.dailyBudgetUsd;
+  }
+  const envVal = parseFloat(process.env.ADNETIKS_DAILY_BUDGET_USD || '5');
+  return Number.isFinite(envVal) && envVal >= 0 ? envVal : 5;
+}
+
+export function setDailyBudgetUsd(amountUsd: number): number {
+  const clean = Math.max(0, Math.min(1000, Number(Number(amountUsd).toFixed(2))));
+  const store = loadStore();
+  store.dailyBudgetUsd = clean;
+  saveStore(store);
+  return clean;
+}
+
+export function getTodaySpendUsd(): number {
+  const { entries } = loadStore();
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  let sum = 0;
+  for (const e of entries) {
+    const t = Date.parse(e.timestamp);
+    if (!Number.isNaN(t) && t >= cutoff) {
+      sum += e.estimatedCostUsd;
+    }
+  }
+  return Number(sum.toFixed(6));
+}
+
+export function assertWithinDailyBudget(estimatedCostUsd: number): { allowed: boolean; todaySpendUsd: number; dailyBudgetUsd: number } {
+  const dailyBudgetUsd = getDailyBudgetUsd();
+  const todaySpendUsd = getTodaySpendUsd();
+  if (estimatedCostUsd <= 0) return { allowed: true, todaySpendUsd, dailyBudgetUsd };
+  return {
+    allowed: todaySpendUsd + estimatedCostUsd <= dailyBudgetUsd,
+    todaySpendUsd,
+    dailyBudgetUsd,
+  };
 }
 
 export function getUsageSummary() {
   const { entries } = loadStore();
+  const dailyBudgetUsd = getDailyBudgetUsd();
+  const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalCostUsd = 0;
+  let todaySpendUsd = 0;
   let freeLocalOps = 0;
   let brandScansCount = 0;
   let imagesGeneratedCount = 0;
@@ -148,6 +195,10 @@ export function getUsageSummary() {
     totalInputTokens += e.inputTokens;
     totalOutputTokens += e.outputTokens;
     totalCostUsd += e.estimatedCostUsd;
+    const t = Date.parse(e.timestamp);
+    if (!Number.isNaN(t) && t >= cutoff24h) {
+      todaySpendUsd += e.estimatedCostUsd;
+    }
     if (e.isLocalFree) freeLocalOps += 1;
     if (e.operation === 'brand_scan') brandScansCount += 1;
     if (e.operation === 'generate_image') imagesGeneratedCount += 1;
@@ -163,12 +214,19 @@ export function getUsageSummary() {
     byOperation[e.operation].costUsd = Number((byOperation[e.operation].costUsd + e.estimatedCostUsd).toFixed(6));
   }
 
+  const cleanToday = Number(todaySpendUsd.toFixed(6));
+  const budgetRemainingUsd = Number(Math.max(0, dailyBudgetUsd - cleanToday).toFixed(4));
+
   return {
     totalCalls: entries.length,
     totalInputTokens,
     totalOutputTokens,
     totalTokens: totalInputTokens + totalOutputTokens,
     totalCostUsd: Number(totalCostUsd.toFixed(6)),
+    todaySpendUsd: cleanToday,
+    dailyBudgetUsd,
+    budgetRemainingUsd,
+    budgetExceeded: cleanToday >= dailyBudgetUsd && dailyBudgetUsd > 0,
     freeLocalOps,
     brandScansCount,
     imagesGeneratedCount,

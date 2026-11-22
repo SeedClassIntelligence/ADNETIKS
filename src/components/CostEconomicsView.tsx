@@ -38,6 +38,10 @@ interface UsageSummary {
   totalOutputTokens: number;
   totalTokens: number;
   totalCostUsd: number;
+  todaySpendUsd?: number;
+  dailyBudgetUsd?: number;
+  budgetRemainingUsd?: number;
+  budgetExceeded?: boolean;
   freeLocalOps: number;
   brandScansCount: number;
   imagesGeneratedCount: number;
@@ -171,7 +175,47 @@ export default function CostEconomicsView({ showNotificationToast }: CostEconomi
             <div className="text-2xl font-extrabold text-purple-400 font-mono mt-1">
               {usage?.freeLocalOps ?? 0}
             </div>
-            <div className="text-[10px] text-slate-500">Local scans, renders &amp; heuristics</div>
+            <div className="text-[10px] text-slate-500">Local scans, renders &amp; Kokoro TTS</div>
+          </div>
+        </div>
+
+        {/* Hard Daily AI Spend Cap Guardrail */}
+        <div className="pt-3 border-t border-[#1F1F2A] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="text-xs">
+            <span className="font-bold text-white">24-Hour Paid AI Spend Cap:</span>{' '}
+            <span className="font-mono text-emerald-400 font-bold">
+              ${(usage?.todaySpendUsd ?? 0).toFixed(4)}
+            </span>{' '}
+            <span className="text-slate-400">
+              spent of <strong className="text-white">${(usage?.dailyBudgetUsd ?? 5).toFixed(2)}</strong> daily limit (local scans, PNG renders &amp; Kokoro voice stay $0.00 forever)
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {[2, 5, 15, 50].map((cap) => (
+              <button
+                key={cap}
+                type="button"
+                onClick={async () => {
+                  const res = await fetch('/api/usage/budget', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dailyBudgetUsd: cap }),
+                  });
+                  const d = await res.json();
+                  if (d?.ok) {
+                    setUsage(d);
+                    showNotificationToast('Daily Spend Cap Updated', `Paid AI requests will automatically pause if 24h spend reaches $${cap}.00.`);
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold border transition-all cursor-pointer ${
+                  Math.round(usage?.dailyBudgetUsd ?? 5) === cap
+                    ? 'bg-emerald-600 border-emerald-500 text-white'
+                    : 'bg-[#0A0A0C] border-[#262636] text-slate-300 hover:text-white'
+                }`}
+              >
+                ${cap}/day
+              </button>
+            ))}
           </div>
         </div>
       </div>

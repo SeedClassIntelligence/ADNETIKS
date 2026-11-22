@@ -363,3 +363,319 @@ export async function uploadMediaBlob(blob: Blob, fileName: string): Promise<{ u
   }
   return res.json();
 }
+
+export interface ProductionSceneInput {
+  id: string;
+  label: string;
+  durationSec: number;
+  spokenScript: string;
+  kineticCaption: string;
+  mediaUrl?: string;
+}
+
+export interface RenderProductionVideoOptions {
+  title: string;
+  brandName: string;
+  domain?: string;
+  aspectRatio: '9:16' | '16:9';
+  scenes: ProductionSceneInput[];
+  voiceAudioUrl?: string;
+  musicStyle: 'ambient_synth' | 'editorial_pulse' | 'launch_momentum' | 'none';
+  impeccableDirective?: 'default' | 'distill' | 'bolder' | 'quieter' | 'typeset' | 'polish';
+  brandPrimaryColor?: string;
+  brandSecondaryColor?: string;
+  onProgress?: (pct: number) => void;
+}
+
+/**
+ * Multi-Stage Production Video Compositor (9:16 Vertical OR 16:9 Widescreen)
+ * Mixes per-scene visuals, Impeccable typography, word-by-word highlighted subtitles,
+ * real Kokoro/Mic voiceover audio track, and optional WebAudio music bed into a real WebM video.
+ */
+export async function renderProductionVideoToBlob(opts: RenderProductionVideoOptions): Promise<Blob> {
+  const isWide = opts.aspectRatio === '16:9';
+  const width = isWide ? 1280 : 720;
+  const height = isWide ? 720 : 1280;
+  const fps = 30;
+  const scenes = opts.scenes.length > 0 ? opts.scenes : [
+    {
+      id: 'sc-1',
+      label: '01 · Hero',
+      durationSec: 4,
+      spokenScript: opts.title,
+      kineticCaption: opts.brandName.toUpperCase(),
+    },
+  ];
+
+  // Compress preview render time slightly while keeping smooth pacing (cap total at 14s max for snappy browser render)
+  const rawTotalSec = scenes.reduce((s, sc) => s + Math.max(2, sc.durationSec), 0);
+  const scale = rawTotalSec > 14 ? 14 / rawTotalSec : 1;
+  const timedScenes = scenes.map((sc) => ({
+    ...sc,
+    renderMs: Math.round(Math.max(2, sc.durationSec) * scale * 1000),
+  }));
+  const totalDurationMs = timedScenes.reduce((s, sc) => s + sc.renderMs, 0);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context unavailable');
+
+  const sceneImages = await Promise.all(timedScenes.map((sc) => loadImageSafe(sc.mediaUrl)));
+  const primary = opts.brandPrimaryColor || '#047857';
+  const secondary = opts.brandSecondaryColor || '#B45309';
+  const directive = opts.impeccableDirective || 'default';
+
+  const canvasStream = canvas.captureStream(fps);
+  const combinedTracks: MediaStreamTrack[] = [...canvasStream.getVideoTracks()];
+  let audioCtx: AudioContext | null = null;
+
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioCtx) {
+      audioCtx = new AudioCtx();
+      const dest = audioCtx.createMediaStreamDestination();
+      const now = audioCtx.currentTime;
+
+      // 1. Mix real voiceover track (Kokoro MP3 or recorded Mic take) if present
+      if (opts.voiceAudioUrl) {
+        try {
+          const resp = await fetch(opts.voiceAudioUrl);
+          if (resp.ok) {
+            const arrBuf = await resp.arrayBuffer();
+            const decoded = await audioCtx.decodeAudioData(arrBuf);
+            const src = audioCtx.createBufferSource();
+            src.buffer = decoded;
+            const voiceGain = audioCtx.createGain();
+            voiceGain.gain.value = 1.0;
+            src.connect(voiceGain);
+            voiceGain.connect(dest);
+            src.start(now);
+          }
+        } catch {
+          // continue with music bed if voice track decode fails
+        }
+      }
+
+      // 2. Mix selectable studio music bed
+      if (opts.musicStyle !== 'none') {
+        const master = audioCtx.createGain();
+        master.gain.value = opts.voiceAudioUrl ? 0.08 : 0.16;
+        master.connect(dest);
+
+        const bass = audioCtx.createOscillator();
+        bass.type = opts.musicStyle === 'ambient_synth' ? 'sine' : 'triangle';
+        bass.frequency.setValueAtTime(opts.musicStyle === 'launch_momentum' ? 65 : 55, now);
+        bass.connect(master);
+        bass.start(now);
+        bass.stop(now + totalDurationMs / 1000 + 0.25);
+
+        const stepSec = opts.musicStyle === 'launch_momentum' ? 0.35 : 0.65;
+        const notes =
+          opts.musicStyle === 'ambient_synth'
+            ? [220, 261.6, 329.6, 293.6]
+            : opts.musicStyle === 'launch_momentum'
+            ? [130.8, 164.8, 196.0, 261.6]
+            : [196.0, 246.9, 293.6, 246.9];
+        const steps = Math.floor(totalDurationMs / 1000 / stepSec);
+        for (let i = 0; i < steps; i++) {
+          const osc = audioCtx.createOscillator();
+          const env = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(notes[i % notes.length], now + i * stepSec);
+          env.gain.setValueAtTime(0.001, now + i * stepSec);
+          env.gain.exponentialRampToValueAtTime(0.32, now + i * stepSec + 0.04);
+          env.gain.exponentialRampToValueAtTime(0.001, now + i * stepSec + stepSec * 0.9);
+          osc.connect(env);
+          env.connect(master);
+          osc.start(now + i * stepSec);
+          osc.stop(now + i * stepSec + stepSec);
+        }
+      }
+
+      dest.stream.getAudioTracks().forEach((t) => combinedTracks.push(t));
+    }
+  } catch {
+    // proceed video-only if audio context blocked
+  }
+
+  const finalStream = new MediaStream(combinedTracks);
+  const mimeCandidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  const mimeType = mimeCandidates.find((m) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) || 'video/webm';
+  const recorder = new MediaRecorder(finalStream, { mimeType, videoBitsPerSecond: 3200000 });
+  const chunks: Blob[] = [];
+  recorder.ondataavailable = (ev) => {
+    if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+  };
+
+  const recordingPromise = new Promise<Blob>((resolve) => {
+    recorder.onstop = () => {
+      if (audioCtx) audioCtx.close().catch(() => {});
+      resolve(new Blob(chunks, { type: mimeType.split(';')[0] || 'video/webm' }));
+    };
+  });
+
+  recorder.start(100);
+  const startTime = performance.now();
+
+  await new Promise<void>((resolve) => {
+    const drawFrame = () => {
+      const elapsed = performance.now() - startTime;
+      const clamped = Math.min(elapsed, totalDurationMs);
+      if (opts.onProgress) opts.onProgress(Math.min(99, Math.round((clamped / totalDurationMs) * 100)));
+
+      // Determine active scene
+      let acc = 0;
+      let sceneIdx = 0;
+      let sceneElapsed = 0;
+      for (let i = 0; i < timedScenes.length; i++) {
+        if (clamped < acc + timedScenes[i].renderMs || i === timedScenes.length - 1) {
+          sceneIdx = i;
+          sceneElapsed = Math.max(0, clamped - acc);
+          break;
+        }
+        acc += timedScenes[i].renderMs;
+      }
+
+      const sc = timedScenes[sceneIdx];
+      const sceneProgress = Math.min(1, sceneElapsed / Math.max(1, sc.renderMs));
+      const bgImg = sceneImages[sceneIdx];
+
+      // Background canvas
+      const bgGrad = ctx.createLinearGradient(0, 0, width, height);
+      if (directive === 'quieter') {
+        bgGrad.addColorStop(0, '#101114');
+        bgGrad.addColorStop(1, '#08090B');
+      } else {
+        bgGrad.addColorStop(0, '#0B121C');
+        bgGrad.addColorStop(1, '#06070A');
+      }
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, width, height);
+
+      // Subtle atmospheric accent glow (suppressed in quieter/distill)
+      if (directive !== 'quieter' && directive !== 'distill') {
+        const rad = ctx.createRadialGradient(width * 0.85, height * 0.15, 20, width * 0.85, height * 0.15, width * 0.65);
+        rad.addColorStop(0, `${primary}55`);
+        rad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = rad;
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      // Per-scene uploaded/generated visual with gentle Ken Burns motion
+      if (bgImg) {
+        const z = 1.02 + sceneProgress * 0.06;
+        const imgAspect = bgImg.width / Math.max(1, bgImg.height);
+        const targetAspect = width / height;
+        let dw = width * z;
+        let dh = height * z;
+        if (imgAspect > targetAspect) {
+          dh = height * z;
+          dw = dh * imgAspect;
+        } else {
+          dw = width * z;
+          dh = dw / imgAspect;
+        }
+        ctx.save();
+        ctx.globalAlpha = 0.42;
+        ctx.drawImage(bgImg, (width - dw) / 2, (height - dh) / 2, dw, dh);
+        ctx.restore();
+      }
+
+      // Impeccable Bolder accent bar or Quieter inset frame
+      if (directive === 'bolder') {
+        ctx.fillStyle = primary;
+        ctx.fillRect(0, 0, 18, height);
+      } else if (directive === 'quieter') {
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(28, 28, width - 56, height - 56);
+      }
+
+      // Top Progress Bar
+      ctx.fillStyle = 'rgba(255,255,255,0.14)';
+      ctx.fillRect(48, 44, width - 96, 5);
+      ctx.fillStyle = primary;
+      ctx.fillRect(48, 44, (width - 96) * (clamped / Math.max(1, totalDurationMs)), 5);
+
+      // Brand Header
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = directive === 'typeset' ? '600 22px Georgia, serif' : '800 22px "Segoe UI", Arial, sans-serif';
+      ctx.fillText(opts.brandName, 48, 92);
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.font = '600 16px monospace';
+      ctx.fillText(`0${sceneIdx + 1} / 0${timedScenes.length}`, width - 120, 92);
+
+      // Kinetic Caption Display (Safe Zone Center)
+      const capFont =
+        directive === 'typeset'
+          ? `bold ${isWide ? 60 : 54}px Georgia, serif`
+          : `900 ${directive === 'bolder' ? (isWide ? 68 : 60) : isWide ? 56 : 50}px "Segoe UI", Arial, sans-serif`;
+      ctx.font = capFont;
+      const capLines = wrapText(ctx, sc.kineticCaption, width - 120);
+      const lineH = isWide ? 74 : 66;
+      const centerY = isWide ? height * 0.44 : height * 0.43;
+      const startY = centerY - ((capLines.length - 1) * lineH) / 2;
+
+      ctx.textAlign = 'left';
+      capLines.forEach((ln, li) => {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText(ln, 56, startY + li * lineH);
+      });
+
+      // Accent rule under headline
+      ctx.fillStyle = primary;
+      ctx.fillRect(56, startY + capLines.length * lineH - 22, 88, 6);
+
+      // Word-by-Word Highlighted Spoken Subtitle Box (Safe Zone above bottom)
+      const words = sc.spokenScript.split(/\s+/).filter(Boolean);
+      const activeWordIdx = Math.min(words.length - 1, Math.floor(sceneProgress * words.length));
+      const subY = isWide ? height - 150 : height - 290;
+      drawRoundedRect(ctx, 48, subY, width - 96, 108, 16);
+      ctx.fillStyle = 'rgba(8, 10, 14, 0.82)';
+      ctx.fill();
+      ctx.strokeStyle = `${secondary}55`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.font = '600 22px "Segoe UI", Arial, sans-serif';
+      const subLines = wrapText(ctx, sc.spokenScript, width - 140).slice(0, 3);
+      let runningWord = 0;
+      subLines.forEach((line, li) => {
+        const lineWords = line.split(/\s+/);
+        let cursorX = 70;
+        lineWords.forEach((w) => {
+          const isCurrent = runningWord === activeWordIdx;
+          ctx.fillStyle = isCurrent ? '#FFFFFF' : 'rgba(226,232,240,0.68)';
+          if (isCurrent) {
+            const mw = ctx.measureText(w).width;
+            ctx.fillStyle = primary;
+            drawRoundedRect(ctx, cursorX - 4, subY + 20 + li * 30, mw + 8, 26, 6);
+            ctx.fill();
+            ctx.fillStyle = '#FFFFFF';
+          }
+          ctx.fillText(w, cursorX, subY + 40 + li * 30);
+          cursorX += ctx.measureText(`${w} `).width;
+          runningWord += 1;
+        });
+      });
+
+      // Clean Footer Domain
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.font = '600 18px monospace';
+      ctx.fillText(opts.domain || opts.brandName, 56, height - 38);
+
+      if (elapsed < totalDurationMs) {
+        requestAnimationFrame(drawFrame);
+      } else {
+        if (opts.onProgress) opts.onProgress(100);
+        resolve();
+      }
+    };
+    requestAnimationFrame(drawFrame);
+  });
+
+  recorder.stop();
+  return recordingPromise;
+}

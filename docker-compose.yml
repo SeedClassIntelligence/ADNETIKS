@@ -5,6 +5,12 @@
 #
 # 100% Offline / Free Local AI launch (bundles Ollama alongside ADNETIKS):
 #   docker compose --profile local-ai up -d
+#
+# Zero-Cost Open-Source Voiceover Studio (bundles Apache-2.0 Kokoro-82M CPU TTS):
+#   docker compose --profile voice up -d
+#
+# Full Zero-Cost Stack (ADNETIKS + Local AI + Kokoro Voice):
+#   docker compose --profile local-ai --profile voice up -d
 
 services:
   adnetiks:
@@ -21,6 +27,7 @@ services:
       - ADNETIKS_LLM_PROVIDER=${ADNETIKS_LLM_PROVIDER:-gemini}
       - ADNETIKS_LLM_MODEL=${ADNETIKS_LLM_MODEL:-}
       - ADNETIKS_API_BASE_URL=${ADNETIKS_API_BASE_URL:-}
+      - ADNETIKS_TTS_BASE_URL=${ADNETIKS_TTS_BASE_URL:-http://kokoro:8880}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
@@ -37,6 +44,16 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
+
+  # Optional 100% Free Apache-2.0 Voiceover Engine (Kokoro-82M CPU · OpenAI /v1/audio/speech compatible)
+  # Start with: docker compose --profile voice up -d
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: adnetiks-kokoro-tts
+    profiles: ["voice"]
+    restart: unless-stopped
+    ports:
+      - "8880:8880"
 
 volumes:
   adnetiks_data:

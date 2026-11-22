@@ -32,8 +32,15 @@ import {
   synthesizeMemoryFromSignals,
 } from './memory.ts';
 import { runFullWebsiteBrandScan } from './brandScanner.ts';
-import { getUsageSummary, clearUsageLedger } from './usageLedger.ts';
+import { getUsageSummary, clearUsageLedger, setDailyBudgetUsd } from './usageLedger.ts';
 import { runOneClickOnboarding } from './onboard.ts';
+import {
+  getPublicTtsConfig,
+  saveTtsConfig,
+  synthesizeVoiceover,
+  generateVideoProductionPlan,
+  runCreativeDirectorChat,
+} from './mediaProductionEngine.ts';
 import {
   getPublicAutomationsState,
   updateAutomationConnection,
@@ -243,6 +250,58 @@ export async function handleAdnetiksRequest(req: IncomingMessage, res: ServerRes
       }
       return true;
     }
+  }
+
+  // Unified Video, Open-Source Voice (Kokoro Apache-2.0), Music & Creative Director Studio
+  // (Must be matched BEFORE the generic GET /api/media/:filename file server!)
+  if (url.startsWith('/api/media/tts-config')) {
+    if (method === 'GET') {
+      sendJson(res, 200, { ok: true, ...getPublicTtsConfig() });
+      return true;
+    }
+    if (method === 'POST') {
+      try {
+        const body = await readJsonBody(req);
+        saveTtsConfig(body);
+        sendJson(res, 200, { ok: true, ...getPublicTtsConfig() });
+      } catch (err: any) {
+        sendJson(res, 400, { ok: false, error: err.message || 'TTS config error' });
+      }
+      return true;
+    }
+  }
+
+  if (url.startsWith('/api/media/tts') && method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const result = await synthesizeVoiceover(body);
+      sendJson(res, result.ok ? 200 : 400, result);
+    } catch (err: any) {
+      sendJson(res, 500, { ok: false, error: err.message || 'Voiceover synthesis error' });
+    }
+    return true;
+  }
+
+  if (url.startsWith('/api/media/video-plan') && method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const result = await generateVideoProductionPlan(body);
+      sendJson(res, 200, result);
+    } catch (err: any) {
+      sendJson(res, 500, { ok: false, error: err.message || 'Video plan error' });
+    }
+    return true;
+  }
+
+  if (url.startsWith('/api/media/director-chat') && method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const result = await runCreativeDirectorChat(body);
+      sendJson(res, 200, result);
+    } catch (err: any) {
+      sendJson(res, 500, { ok: false, error: err.message || 'Creative Director Chat error' });
+    }
+    return true;
   }
 
   // Real Persistent Media Vault Upload (POST /api/media/upload)
@@ -494,7 +553,18 @@ export async function handleAdnetiksRequest(req: IncomingMessage, res: ServerRes
     }
   }
 
-  // Live AI Cost & Token Usage Ledger (/api/usage)
+  // Live AI Cost & Token Usage Ledger + Daily Spend Cap (/api/usage, /api/usage/budget)
+  if (url.startsWith('/api/usage/budget') && method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      setDailyBudgetUsd(Number(body.dailyBudgetUsd ?? 5));
+      sendJson(res, 200, { ok: true, ...getUsageSummary() });
+    } catch (err: any) {
+      sendJson(res, 400, { ok: false, error: err.message || 'Budget update failed' });
+    }
+    return true;
+  }
+
   if (url.startsWith('/api/usage')) {
     if (method === 'GET') {
       sendJson(res, 200, { ok: true, ...getUsageSummary() });

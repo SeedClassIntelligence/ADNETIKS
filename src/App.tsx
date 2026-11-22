@@ -11,6 +11,7 @@ import Sidebar from './components/Sidebar';
 import HomeDashboard from './components/HomeDashboard';
 import ContentStudio from './components/ContentStudio';
 import HighEndAdSetStudio from './components/HighEndAdSetStudio';
+import UnifiedMediaStudio from './components/UnifiedMediaStudio';
 import BrandAvatarStudio from './components/BrandAvatarStudio';
 import ServiceOrchestrator from './components/ServiceOrchestrator';
 import AdnetiksVideoStudio from './components/AdnetiksVideoStudio';
@@ -138,7 +139,7 @@ export default function App() {
 
   // Active Campaign Project & Sub-Pillar Tabs
   const [activeCampaignId, setActiveCampaignId] = useState<string>(() => campaigns[0]?.id || 'camp-q4-surge');
-  const [studioSubMode, setStudioSubMode] = useState<'ad_set' | 'social_studio'>('ad_set');
+  const [studioSubMode, setStudioSubMode] = useState<'ad_set' | 'video_voice' | 'social_studio'>('ad_set');
   const [distributionSubTab, setDistributionSubTab] = useState<'queue' | 'ab_lab'>('queue');
   const [signalsSubTab, setSignalsSubTab] = useState<'analytics' | 'inbox'>('analytics');
 
@@ -614,11 +615,11 @@ export default function App() {
             />
           )}
 
-          {/* PILLAR 2: Campaigns (High-End Editable Ad Set Studio + Social Post & Video Studio) */}
+          {/* PILLAR 2: Campaigns (High-End Ad Set Studio + Video/Voice/Music Studio + Social Studio) */}
           {activeTab === 'studio' && (
             <div className="space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1F1F2A] pb-3.5">
-                <div className="flex items-center gap-1.5 bg-[#111116] p-1 rounded-xl border border-[#242434] self-start">
+                <div className="flex flex-wrap items-center gap-1.5 bg-[#111116] p-1 rounded-xl border border-[#242434] self-start">
                   <button
                     type="button"
                     onClick={() => setStudioSubMode('ad_set')}
@@ -628,7 +629,18 @@ export default function App() {
                         : 'text-[#8B8BA8] hover:text-white'
                     }`}
                   >
-                    High-End Ad Set Studio (4 Editable Ads)
+                    High-End Ad Set Studio (4 Ads)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudioSubMode('video_voice')}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                      studioSubMode === 'video_voice'
+                        ? 'bg-red-600 text-white shadow-md shadow-red-900/30'
+                        : 'text-[#8B8BA8] hover:text-white'
+                    }`}
+                  >
+                    Video, Voice (Kokoro) &amp; Director Chat
                   </button>
                   <button
                     type="button"
@@ -639,13 +651,15 @@ export default function App() {
                         : 'text-[#8B8BA8] hover:text-white'
                     }`}
                   >
-                    Social Post &amp; 9:16 Video Studio
+                    Social Post &amp; Carousel Studio
                   </button>
                 </div>
                 <span className="text-[11px] font-mono text-[#8B8BA8]">
                   {studioSubMode === 'ad_set'
-                    ? 'Multi-Source: Website + Social Profile + Likeness / Product Photos'
-                    : 'Organic Feed Preview · Carousel Deck · 9:16 Video Compositor'}
+                    ? 'Impeccable Art Direction · Multi-Source + Likeness'
+                    : studioSubMode === 'video_voice'
+                    ? '6-Stage Video Pipeline · Kokoro $0 Voice · Quality Gates'
+                    : 'Organic Feed Preview · Carousel Deck · Templates'}
                 </span>
               </div>
 
@@ -654,6 +668,12 @@ export default function App() {
                   brandProfile={brandProfile}
                   setBrandProfile={setBrandProfile}
                   selectedAvatar={selectedAvatar}
+                  onSaveToQueue={handleSaveToQueue}
+                  showNotificationToast={showNotificationToast}
+                />
+              ) : studioSubMode === 'video_voice' ? (
+                <UnifiedMediaStudio
+                  brandProfile={brandProfile}
                   onSaveToQueue={handleSaveToQueue}
                   showNotificationToast={showNotificationToast}
                 />

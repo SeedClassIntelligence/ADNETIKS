@@ -75,6 +75,7 @@ const MIME_TO_EXT: Record<string, string> = {
   'video/quicktime': 'mov',
   'audio/mpeg': 'mp3',
   'audio/wav': 'wav',
+  'audio/webm': 'webm',
 };
 
 const EXT_TO_MIME: Record<string, string> = {
@@ -105,12 +106,16 @@ export interface SavedMediaAsset {
  */
 export function saveDataUrlMedia(dataUrl: string, originalName?: string): SavedMediaAsset {
   ensureDirs();
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) {
+  const marker = ';base64,';
+  const markerIdx = typeof dataUrl === 'string' ? dataUrl.indexOf(marker) : -1;
+  if (!dataUrl || !dataUrl.startsWith('data:') || markerIdx === -1) {
     throw new Error('Invalid base64 data URL');
   }
-  const rawMime = match[1].toLowerCase().split(';')[0].trim();
-  const base64Body = match[2];
+  const rawMime = dataUrl.slice(5, markerIdx).toLowerCase().split(';')[0].trim();
+  const base64Body = dataUrl.slice(markerIdx + marker.length);
+  if (!base64Body) {
+    throw new Error('Empty base64 media payload');
+  }
   const ext = MIME_TO_EXT[rawMime] || (originalName?.split('.').pop()?.toLowerCase() || 'bin');
   const safeBase = (originalName || 'asset')
     .replace(/\.[^/.]+$/, '')
