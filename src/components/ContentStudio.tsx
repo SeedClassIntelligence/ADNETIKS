@@ -481,6 +481,7 @@ export default function ContentStudio({
 
   // Real Website Brand DNA & Screenshot Scanner State
   const [isScanningBrand, setIsScanningBrand] = useState(false);
+  const [showReferenceScans, setShowReferenceScans] = useState(false);
   const [activeBrandAccent, setActiveBrandAccent] = useState<string>(
     brandProfile.brandColors?.primary || '#E8192C'
   );
@@ -2599,10 +2600,21 @@ export default function ContentStudio({
                         </span>
                       </div>
 
-                      {/* Website Reference Captures (Used to Read Brand DNA) */}
-                      <div className="text-[10px] text-slate-400">
-                        Website Reference Scans <span className="text-slate-500">(used to read your brand — your ads use clean, low-text Ad Creatives on the right)</span>
+                      {/* Website Reference Captures — Collapsed by default to keep Studio clean */}
+                      <div className="flex items-center justify-between gap-2 text-[10px]">
+                        <span className="text-slate-400">
+                          Read {brandScanResult.crawledPages?.length || 1} site page(s) in background for brand messaging &amp; palette.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowReferenceScans(!showReferenceScans)}
+                          className="text-cyan-400 hover:text-cyan-300 font-mono font-bold underline shrink-0 cursor-pointer"
+                        >
+                          {showReferenceScans ? 'Hide Reference Scans' : 'Show Reference Scans'}
+                        </button>
                       </div>
+
+                      {showReferenceScans && (
                       <div className="grid grid-cols-2 gap-2">
                         {brandScanResult.desktopScreenshotUrl && (
                           <button
@@ -2645,6 +2657,7 @@ export default function ContentStudio({
                           </button>
                         )}
                       </div>
+                      )}
 
                       {/* Extracted Brand Color Palette Swatches (Click to Re-Theme Ads & Videos) */}
                       <div className="space-y-1.5">
@@ -2679,60 +2692,28 @@ export default function ContentStudio({
                         </div>
                       </div>
 
-                      {/* Multi-Page Crawled Site Map (Click any page to apply screenshot or focus a campaign on that page!) */}
+                      {/* Multi-Page Crawled Site Map (Compact topic pills — no noisy webpage screenshot clutter!) */}
                       {brandScanResult.crawledPages && brandScanResult.crawledPages.length > 1 && (
                         <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
                           <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
-                            <span>Full-Site Crawl ({brandScanResult.crawledPages.length} Pages Captured):</span>
-                            <span className="text-emerald-400">Click any page to target</span>
+                            <span>Site Sections Analyzed ({brandScanResult.crawledPages.length}):</span>
+                            <span className="text-emerald-400">Click any section to angle ads</span>
                           </div>
-                          <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+                          <div className="flex flex-wrap gap-1.5">
                             {brandScanResult.crawledPages.map((pg, idx) => (
-                              <div
+                              <button
                                 key={`${pg.label}-${idx}`}
-                                className="p-2 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/70 transition-all space-y-1.5"
+                                type="button"
+                                onClick={() => {
+                                  if (pg.headings[0]) setAdHeadline(pg.headings[0].slice(0, 72));
+                                  const pageBrief = `[${brandScanResult.brandName} — ${pg.label} Page] Headings: ${pg.headings.join(' | ')}. Copy: ${pg.excerpt.slice(0, 800)}`;
+                                  handleRunFullCampaignSynthesis(pageBrief);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-cyan-950/60 border border-slate-800 hover:border-cyan-500/70 text-[10px] font-bold text-slate-200 hover:text-white transition-all cursor-pointer"
+                                title={pg.headings[0] || `Target ${pg.label} messaging`}
                               >
-                                {pg.screenshotUrl && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setUploadedScreenshot(pg.screenshotUrl!);
-                                      applyImageToVariants(pg.screenshotUrl!);
-                                      showNotificationToast(`${pg.label} Visual Applied`, `Applied live capture of "${pg.label}" to your ad preview.`);
-                                    }}
-                                    className="w-full rounded overflow-hidden aspect-video bg-black border border-slate-800 block"
-                                    title={`Click to use ${pg.label} screenshot in your ad`}
-                                  >
-                                    <img
-                                      src={pg.screenshotUrl}
-                                      alt={pg.label}
-                                      className="w-full h-full object-cover object-top"
-                                    />
-                                  </button>
-                                )}
-                                <div className="flex items-center justify-between gap-1">
-                                  <span className="text-[10px] font-bold text-white truncate">{pg.label}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (pg.screenshotUrl) {
-                                        setUploadedScreenshot(pg.screenshotUrl);
-                                        applyImageToVariants(pg.screenshotUrl);
-                                      }
-                                      if (pg.headings[0]) setAdHeadline(pg.headings[0].slice(0, 72));
-                                      const pageBrief = `[${brandScanResult.brandName} — ${pg.label} Page] Headings: ${pg.headings.join(' | ')}. Copy: ${pg.excerpt.slice(0, 800)}`;
-                                      handleRunFullCampaignSynthesis(pageBrief);
-                                    }}
-                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-950/70 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-800/60 shrink-0 transition-colors"
-                                    title={`Build a dedicated campaign specifically around the ${pg.label} page`}
-                                  >
-                                    Build Ad →
-                                  </button>
-                                </div>
-                                {pg.headings[0] && (
-                                  <p className="text-[9px] text-slate-400 line-clamp-1">{pg.headings[0]}</p>
-                                )}
-                              </div>
+                                {pg.label} →
+                              </button>
                             ))}
                           </div>
                         </div>

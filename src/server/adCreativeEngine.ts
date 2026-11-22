@@ -39,6 +39,7 @@ export interface BrandAdCreativeOptions {
   fonts?: string[];
   oldWayPoints?: string[];
   newWayPoints?: string[];
+  subjectImageUrl?: string;
 }
 
 export interface BrandAdCreativeResult {
@@ -126,7 +127,23 @@ function trimWords(text: string, maxChars: number): string {
   return clean.slice(0, maxChars - 1).replace(/\s+\S*$/, '') + '…';
 }
 
+function resolveSubjectDataUri(subjectImageUrl?: string): string | null {
+  if (!subjectImageUrl) return null;
+  if (subjectImageUrl.startsWith('data:image/')) return subjectImageUrl;
+  if (subjectImageUrl.startsWith('/api/media/')) {
+    const fileName = decodeURIComponent(subjectImageUrl.replace(/^\/api\/media\//, ''));
+    const full = path.join(MEDIA_DIR, path.basename(fileName));
+    if (fs.existsSync(full)) {
+      const ext = path.extname(full).toLowerCase();
+      const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : 'image/png';
+      return `data:${mime};base64,${fs.readFileSync(full).toString('base64')}`;
+    }
+  }
+  return null;
+}
+
 function buildCreativeHtml(opts: BrandAdCreativeOptions, width: number, height: number): string {
+  const subjectDataUri = resolveSubjectDataUri(opts.subjectImageUrl);
   const primary = sanitizeHex(opts.palette?.primary, '#047857');
   const secondary = sanitizeHex(opts.palette?.secondary, '#B45309');
   const rawBg = sanitizeHex(opts.palette?.background, '#0C1622');
@@ -274,6 +291,42 @@ function buildCreativeHtml(opts: BrandAdCreativeOptions, width: number, height: 
             <span>${ctaText}</span><span>→</span>
           </div>
           <div style="font-size:${isWide ? 19 : 22}px;color:rgba(255,255,255,0.68);font-weight:600;">${domain || brandName}</div>
+        </div>
+      </div>
+    `;
+  } else if (subjectDataUri) {
+    // Magazine-grade Editorial Commercial Ad featuring the User's Own Likeness / Product Photo
+    bodyInner = `
+      <div style="position:absolute;inset:0;z-index:1;overflow:hidden;">
+        <img src="${subjectDataUri}" style="width:100%;height:100%;object-fit:cover;object-position:center 22%;filter:contrast(1.06) saturate(1.06);" />
+        <div style="position:absolute;inset:0;background:linear-gradient(180deg, rgba(6,9,14,0.42) 0%, rgba(6,9,14,0.18) 38%, rgba(6,9,14,0.88) 76%, rgba(6,9,14,0.97) 100%);"></div>
+        <div style="position:absolute;inset:0;background:radial-gradient(circle at 85% 15%, rgba(${pr},${pg},${pb},0.34), transparent 52%);"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;justify-content:space-between;height:100%;position:relative;z-index:2;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:inline-flex;align-items:center;gap:12px;padding:10px 22px;border-radius:999px;background:rgba(8,10,16,0.72);backdrop-filter:blur(10px);border:1.5px solid rgba(${pr},${pg},${pb},0.75);color:#FFFFFF;font-size:${isWide ? 18 : 22}px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;">
+            <span style="width:10px;height:10px;border-radius:999px;background:${primary};"></span>
+            ${eyebrow}
+          </div>
+          ${domain ? `<div style="padding:8px 16px;border-radius:999px;background:rgba(8,10,16,0.65);font-size:${isWide ? 16 : 20}px;color:rgba(255,255,255,0.86);font-weight:700;">${domain}</div>` : ''}
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:${isWide ? 16 : 22}px;">
+          <div style="width:84px;height:7px;border-radius:999px;background:linear-gradient(90deg, ${primary}, ${secondary});"></div>
+          <h1 style="margin:0;font-size:${isWide ? 54 : isPortrait ? 78 : 66}px;line-height:1.04;font-weight:900;letter-spacing:-0.03em;color:#FFFFFF;text-shadow:0 10px 36px rgba(0,0,0,0.65);">
+            ${headline}
+          </h1>
+          ${
+            subheadline
+              ? `<p style="margin:0;font-size:${isWide ? 22 : isPortrait ? 30 : 26}px;line-height:1.35;color:rgba(255,255,255,0.86);font-weight:500;max-width:90%;">${subheadline}</p>`
+              : ''
+          }
+          <div style="display:flex;align-items:center;justify-content:space-between;padding-top:10px;">
+            <div style="display:inline-flex;align-items:center;gap:14px;padding:${isWide ? '15px 32px' : '20px 38px'};border-radius:16px;background:${primary};color:${ctaTextColor};font-size:${isWide ? 22 : 26}px;font-weight:900;box-shadow:0 18px 46px rgba(${pr},${pg},${pb},0.55);">
+              <span>${ctaText}</span><span>→</span>
+            </div>
+            <div style="font-size:${isWide ? 20 : 24}px;font-weight:900;color:#FFFFFF;text-shadow:0 4px 16px rgba(0,0,0,0.6);">${brandName}</div>
+          </div>
         </div>
       </div>
     `;

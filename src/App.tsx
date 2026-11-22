@@ -10,6 +10,7 @@ import TopNav from './components/TopNav';
 import Sidebar from './components/Sidebar';
 import HomeDashboard from './components/HomeDashboard';
 import ContentStudio from './components/ContentStudio';
+import HighEndAdSetStudio from './components/HighEndAdSetStudio';
 import BrandAvatarStudio from './components/BrandAvatarStudio';
 import ServiceOrchestrator from './components/ServiceOrchestrator';
 import AdnetiksVideoStudio from './components/AdnetiksVideoStudio';
@@ -137,6 +138,7 @@ export default function App() {
 
   // Active Campaign Project & Sub-Pillar Tabs
   const [activeCampaignId, setActiveCampaignId] = useState<string>(() => campaigns[0]?.id || 'camp-q4-surge');
+  const [studioSubMode, setStudioSubMode] = useState<'ad_set' | 'social_studio'>('ad_set');
   const [distributionSubTab, setDistributionSubTab] = useState<'queue' | 'ab_lab'>('queue');
   const [signalsSubTab, setSignalsSubTab] = useState<'analytics' | 'inbox'>('analytics');
 
@@ -467,6 +469,7 @@ export default function App() {
       setDistributionSubTab('queue');
       setActiveTab('distribution');
     } else {
+      if (destination === 'studio') setStudioSubMode('social_studio');
       setActiveTab(destination);
     }
     showNotificationToast(
@@ -611,39 +614,83 @@ export default function App() {
             />
           )}
 
-          {/* PILLAR 2: Campaigns (Projects + Guided Studio + AI/Recorded Video) */}
+          {/* PILLAR 2: Campaigns (High-End Editable Ad Set Studio + Social Post & Video Studio) */}
           {activeTab === 'studio' && (
-            <ContentStudio
-              brandProfile={brandProfile}
-              setBrandProfile={setBrandProfile}
-              avatars={avatars}
-              setAvatars={setAvatars}
-              selectedAvatar={selectedAvatar}
-              setSelectedAvatar={setSelectedAvatar}
-              onSaveToQueue={handleSaveToQueue}
-              onLaunchSplitTest={(exp) => {
-                handleLaunchSplitTest(exp);
-                setDistributionSubTab('ab_lab');
-                setActiveTab('distribution');
-              }}
-              userRole={userRole}
-              showNotificationToast={showNotificationToast}
-              preloadedTheme={preloadedTheme}
-              onClearPreloadedTheme={() => setPreloadedTheme(null)}
-              initialSourceMode={studioSourceMode}
-              initialFormat={studioInitialFormat}
-              attachedVideo={attachedCampaignVideo}
-              onAttachVideo={setAttachedCampaignVideo}
-              campaigns={campaigns}
-              activeCampaignId={activeCampaignId}
-              onSelectCampaign={setActiveCampaignId}
-              onCreateCampaign={handleCreateCampaign}
-              onUpdateCampaignTitle={handleUpdateCampaignTitle}
-              preloadedTemplate={preloadedTemplate}
-              onClearPreloadedTemplate={() => setPreloadedTemplate(null)}
-              preloadedOnboard={preloadedOnboard}
-              onClearPreloadedOnboard={() => setPreloadedOnboard(null)}
-            />
+            <div className="space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1F1F2A] pb-3.5">
+                <div className="flex items-center gap-1.5 bg-[#111116] p-1 rounded-xl border border-[#242434] self-start">
+                  <button
+                    type="button"
+                    onClick={() => setStudioSubMode('ad_set')}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                      studioSubMode === 'ad_set'
+                        ? 'bg-red-600 text-white shadow-md shadow-red-900/30'
+                        : 'text-[#8B8BA8] hover:text-white'
+                    }`}
+                  >
+                    High-End Ad Set Studio (4 Editable Ads)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudioSubMode('social_studio')}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      studioSubMode === 'social_studio'
+                        ? 'bg-red-600 text-white shadow-md shadow-red-900/30'
+                        : 'text-[#8B8BA8] hover:text-white'
+                    }`}
+                  >
+                    Social Post &amp; 9:16 Video Studio
+                  </button>
+                </div>
+                <span className="text-[11px] font-mono text-[#8B8BA8]">
+                  {studioSubMode === 'ad_set'
+                    ? 'Multi-Source: Website + Social Profile + Likeness / Product Photos'
+                    : 'Organic Feed Preview · Carousel Deck · 9:16 Video Compositor'}
+                </span>
+              </div>
+
+              {studioSubMode === 'ad_set' ? (
+                <HighEndAdSetStudio
+                  brandProfile={brandProfile}
+                  setBrandProfile={setBrandProfile}
+                  selectedAvatar={selectedAvatar}
+                  onSaveToQueue={handleSaveToQueue}
+                  showNotificationToast={showNotificationToast}
+                />
+              ) : (
+                <ContentStudio
+                  brandProfile={brandProfile}
+                  setBrandProfile={setBrandProfile}
+                  avatars={avatars}
+                  setAvatars={setAvatars}
+                  selectedAvatar={selectedAvatar}
+                  setSelectedAvatar={setSelectedAvatar}
+                  onSaveToQueue={handleSaveToQueue}
+                  onLaunchSplitTest={(exp) => {
+                    handleLaunchSplitTest(exp);
+                    setDistributionSubTab('ab_lab');
+                    setActiveTab('distribution');
+                  }}
+                  userRole={userRole}
+                  showNotificationToast={showNotificationToast}
+                  preloadedTheme={preloadedTheme}
+                  onClearPreloadedTheme={() => setPreloadedTheme(null)}
+                  initialSourceMode={studioSourceMode}
+                  initialFormat={studioInitialFormat}
+                  attachedVideo={attachedCampaignVideo}
+                  onAttachVideo={setAttachedCampaignVideo}
+                  campaigns={campaigns}
+                  activeCampaignId={activeCampaignId}
+                  onSelectCampaign={setActiveCampaignId}
+                  onCreateCampaign={handleCreateCampaign}
+                  onUpdateCampaignTitle={handleUpdateCampaignTitle}
+                  preloadedTemplate={preloadedTemplate}
+                  onClearPreloadedTemplate={() => setPreloadedTemplate(null)}
+                  preloadedOnboard={preloadedOnboard}
+                  onClearPreloadedOnboard={() => setPreloadedOnboard(null)}
+                />
+              )}
+            </div>
           )}
 
           {/* Standalone Video Studio (still accessible if linked directly) */}
@@ -778,6 +825,7 @@ export default function App() {
               brandProfile={brandProfile}
               onUseTemplate={(tmpl) => {
                 setPreloadedTemplate(tmpl);
+                setStudioSubMode('social_studio');
                 setActiveTab('studio');
               }}
               onStartSectionTour={(sectionKey) => {

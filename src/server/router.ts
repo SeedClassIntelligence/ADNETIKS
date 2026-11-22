@@ -9,7 +9,8 @@
 import fs from 'fs';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { handleGenerateContent, handleGenerateImage, handleDiscoverAvatars, handleGenerateAiVideo } from './api.ts';
-import { getLLMConfig, setRuntimeLLMConfig } from './llmProvider.ts';
+import { getLLMConfig, setRuntimeLLMConfig, getActiveImageProvider } from './llmProvider.ts';
+import { generateHighEndAdSet, regenerateSingleAdVisual } from './adSetEngine.ts';
 import { loadWorkspace, saveWorkspace, saveDataUrlMedia, resolveMediaFile, listMediaFiles } from './storage.ts';
 import { scrapeUrlContext, analyzeImageVisual } from './ingest.ts';
 import {
@@ -108,6 +109,30 @@ export async function handleAdnetiksRequest(req: IncomingMessage, res: ServerRes
     return true;
   }
 
+  // Multi-Source High-End 4-Ad Campaign Set Generator (POST /api/generate-ad-set)
+  if (url.startsWith('/api/generate-ad-set') && method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const result = await generateHighEndAdSet(body);
+      sendJson(res, 200, result);
+    } catch (err: any) {
+      sendJson(res, 500, { ok: false, error: err.message || 'Ad Set Generation Error' });
+    }
+    return true;
+  }
+
+  // Single Ad Visual Regenerator (POST /api/regenerate-single-ad)
+  if (url.startsWith('/api/regenerate-single-ad') && method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const result = await regenerateSingleAdVisual(body);
+      sendJson(res, 200, result);
+    } catch (err: any) {
+      sendJson(res, 500, { ok: false, error: err.message || 'Single Ad Visual Error' });
+    }
+    return true;
+  }
+
   // Avatar Discovery Route (Offer-Derived Prospects)
   if (url.startsWith('/api/discover-avatars') && method === 'POST') {
     try {
@@ -165,6 +190,8 @@ export async function handleAdnetiksRequest(req: IncomingMessage, res: ServerRes
         model: config.model,
         baseUrl: config.baseUrl || '',
         hasApiKey: !!config.apiKey,
+        hasImageKey: !!getActiveImageProvider(),
+        imageProvider: getActiveImageProvider(),
       });
       return true;
     }

@@ -5,8 +5,12 @@
  * Supports Gemini, OpenAI, Anthropic Claude, and any OpenAI-compatible endpoint.
  */
 
+import fs from 'fs';
+import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { recordUsageEvent, estimateTokens } from './usageLedger.ts';
+
+const LLM_CONFIG_FILE = path.resolve(process.cwd(), '.adnetiks-data', 'llm-config.json');
 
 export type LLMProvider = 'gemini' | 'openai' | 'anthropic' | 'openai_compatible';
 
@@ -26,8 +30,61 @@ const DEFAULT_MODELS: Record<LLMProvider, string> = {
 
 let runtimeConfigOverride: Partial<LLMConfig> = {};
 
+function loadPersistedLlmConfig(): Partial<LLMConfig> {
+  try {
+    if (fs.existsSync(LLM_CONFIG_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(LLM_CONFIG_FILE, 'utf-8'));
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.geminiKey && !process.env.GEMINI_API_KEY) process.env.GEMINI_API_KEY = parsed.geminiKey;
+        if (parsed.openaiKey && !process.env.OPENAI_API_KEY) process.env.OPENAI_API_KEY = parsed.openaiKey;
+        if (parsed.anthropicKey && !process.env.ANTHROPIC_API_KEY) process.env.ANTHROPIC_API_KEY = parsed.anthropicKey;
+        return parsed.override || {};
+      }
+    }
+  } catch {
+    // ignore corrupted config
+  }
+  return {};
+}
+
+// Hydrate any saved runtime keys on module boot
+runtimeConfigOverride = loadPersistedLlmConfig();
+
 export function setRuntimeLLMConfig(override: Partial<LLMConfig>) {
   runtimeConfigOverride = { ...runtimeConfigOverride, ...override };
+  const targetProvider = override.provider || runtimeConfigOverride.provider || 'gemini';
+  if (override.apiKey && override.apiKey.trim()) {
+    const cleanKey = override.apiKey.trim();
+    if (targetProvider === 'gemini') process.env.GEMINI_API_KEY = cleanKey;
+    if (targetProvider === 'openai') process.env.OPENAI_API_KEY = cleanKey;
+    if (targetProvider === 'anthropic') process.env.ANTHROPIC_API_KEY = cleanKey;
+  }
+  try {
+    const dir = path.dirname(LLM_CONFIG_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      LLM_CONFIG_FILE,
+      JSON.stringify(
+        {
+          override: runtimeConfigOverride,
+          geminiKey: process.env.GEMINI_API_KEY || '',
+          openaiKey: process.env.OPENAI_API_KEY || '',
+          anthropicKey: process.env.ANTHROPIC_API_KEY || '',
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+  } catch {
+    // ignore write failure
+  }
+}
+
+export function getActiveImageProvider(): 'gemini' | 'openai' | null {
+  if (process.env.GEMINI_API_KEY) return 'gemini';
+  if (process.env.OPENAI_API_KEY) return 'openai';
+  return null;
 }
 
 /**
