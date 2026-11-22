@@ -20,6 +20,7 @@ import {
   Users,
   Compass,
   Zap,
+  Globe,
 } from 'lucide-react';
 
 interface TopNavProps {
@@ -34,6 +35,7 @@ interface TopNavProps {
   onNewCampaignClick: () => void;
   onStartTour?: () => void;
   onOpenOneClickLaunch?: () => void;
+  onOpenLandingPage?: () => void;
   brandName?: string;
   brandArchetype?: string;
   activeCampaignTitle?: string;
@@ -51,6 +53,7 @@ export default function TopNav({
   onNewCampaignClick,
   onStartTour,
   onOpenOneClickLaunch,
+  onOpenLandingPage,
   brandName = 'ADNETIKS',
   brandArchetype = 'The Catalyst',
   activeCampaignTitle,
@@ -102,8 +105,19 @@ export default function TopNav({
           </div>
         </div>
 
-        {/* Right: 1-Click Launch + Guided Tour + Active Brand Pill + Role + Utilities + New Campaign CTA */}
+        {/* Right: Product Page + 1-Click Launch + Guided Tour + Active Brand Pill + Role + Utilities + New Campaign CTA */}
         <div className="flex items-center gap-2 shrink-0">
+          {onOpenLandingPage && (
+            <button
+              onClick={onOpenLandingPage}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#111116] hover:bg-[#1B1B24] border border-[#2A2A38] text-slate-300 hover:text-white text-xs font-semibold transition-all cursor-pointer"
+              title="Open the public ADNETIKS Product Landing Page to share or explain what ADNETIKS does"
+            >
+              <Globe className="w-3.5 h-3.5 text-slate-400" />
+              <span className="hidden xl:inline">Landing Page</span>
+            </button>
+          )}
+
           {onOpenOneClickLaunch && (
             <button
               onClick={onOpenOneClickLaunch}

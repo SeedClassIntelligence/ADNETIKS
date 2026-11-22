@@ -20,6 +20,7 @@ import IntegrationsHub from './components/IntegrationsHub';
 import ResourcesPage from './components/ResourcesPage';
 import GuidedTourOverlay, { normalizeTourSection } from './components/GuidedTourOverlay';
 import OneClickOnboardModal, { OneClickOnboardResultPayload } from './components/OneClickOnboardModal';
+import LandingPage from './components/LandingPage';
 import StakeholderReportModal from './components/StakeholderReportModal';
 import NotificationDrawer from './components/NotificationDrawer';
 import AdnetiksLogo from './components/AdnetiksLogo';
@@ -115,11 +116,22 @@ export default function App() {
   const [adMetrics] = useState(initialTikTokAdMetrics);
   const [heatmapData] = useState(() => generateHeatmapData());
 
+  // Public Product Landing Page vs Interactive Studio Toggle
+  const [showLandingPage, setShowLandingPage] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const params = new URLSearchParams(window.location.search);
+    if (path === '/landing' || params.get('view') === 'landing') return true;
+    if (path === '/app' || path === '/dashboard' || params.get('view') === 'app') return false;
+    return localStorage.getItem('adnetiks_entered_studio') !== 'true';
+  });
+
   // Modal & Drawer States
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
   const [isTourOpen, setIsTourOpen] = useState(false);
   const [isOneClickModalOpen, setIsOneClickModalOpen] = useState(false);
+  const [oneClickInitialUrl, setOneClickInitialUrl] = useState<string>('');
   const [preloadedOnboard, setPreloadedOnboard] = useState<OneClickOnboardResultPayload | null>(null);
   const [preloadedTemplate, setPreloadedTemplate] = useState<CampaignTemplate | null>(null);
 
@@ -485,6 +497,42 @@ export default function App() {
   const scheduledCount = posts.filter((p) => p.status === 'scheduled' || p.status === 'approved').length;
   const activeCampaignTitle = campaigns.find((c) => c.id === activeCampaignId)?.title;
 
+  const handleEnterStudioFromLanding = (initialTab?: string) => {
+    localStorage.setItem('adnetiks_entered_studio', 'true');
+    setShowLandingPage(false);
+    if (typeof window !== 'undefined' && window.location.pathname === '/landing') {
+      window.history.replaceState({}, '', '/');
+    }
+    if (initialTab) handleNavigateTab(initialTab);
+  };
+
+  const handleLaunchFromLandingWithUrl = (url: string) => {
+    localStorage.setItem('adnetiks_entered_studio', 'true');
+    setShowLandingPage(false);
+    if (typeof window !== 'undefined' && window.location.pathname === '/landing') {
+      window.history.replaceState({}, '', '/');
+    }
+    setOneClickInitialUrl(url);
+    setIsOneClickModalOpen(true);
+  };
+
+  const handleOpenLandingPage = () => {
+    setShowLandingPage(true);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', '/landing');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  if (showLandingPage) {
+    return (
+      <LandingPage
+        onEnterStudio={handleEnterStudioFromLanding}
+        onLaunchWithUrl={handleLaunchFromLandingWithUrl}
+      />
+    );
+  }
+
   return (
     <div className={`min-h-screen flex flex-row ${isDark ? 'dark bg-[#0A0A0C] text-[#E5E5F0]' : 'bg-slate-50 text-slate-900'}`}>
       
@@ -514,7 +562,11 @@ export default function App() {
           toggleTheme={toggleTheme}
           onNewCampaignClick={handleCreateCampaign}
           onStartTour={() => setIsTourOpen(true)}
-          onOpenOneClickLaunch={() => setIsOneClickModalOpen(true)}
+          onOpenOneClickLaunch={() => {
+            setOneClickInitialUrl('');
+            setIsOneClickModalOpen(true);
+          }}
+          onOpenLandingPage={handleOpenLandingPage}
           brandName={brandProfile.name}
           brandArchetype={brandProfile.archetype}
           activeCampaignTitle={activeCampaignTitle}
@@ -796,6 +848,7 @@ export default function App() {
       <OneClickOnboardModal
         isOpen={isOneClickModalOpen}
         onClose={() => setIsOneClickModalOpen(false)}
+        initialUrl={oneClickInitialUrl}
         onApplyOnboardResult={handleApplyOneClickOnboard}
         showNotificationToast={showNotificationToast}
       />
