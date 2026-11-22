@@ -775,6 +775,7 @@ export default function App() {
           {/* Resources, High-Converting Templates & Playbooks */}
           {activeTab === 'resources' && (
             <ResourcesPage
+              brandProfile={brandProfile}
               onUseTemplate={(tmpl) => {
                 setPreloadedTemplate(tmpl);
                 setActiveTab('studio');

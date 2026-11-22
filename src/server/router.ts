@@ -33,6 +33,13 @@ import {
 import { runFullWebsiteBrandScan } from './brandScanner.ts';
 import { getUsageSummary, clearUsageLedger } from './usageLedger.ts';
 import { runOneClickOnboarding } from './onboard.ts';
+import {
+  getPublicAutomationsState,
+  updateAutomationConnection,
+  syncPlatformWorkflows,
+  deployWorkflowToPlatform,
+  triggerAutomationWorkflow,
+} from './automations.ts';
 
 let schedulerStarted = false;
 
@@ -459,6 +466,56 @@ export async function handleAdnetiksRequest(req: IncomingMessage, res: ServerRes
       sendJson(res, 200, { ok: true, ...getUsageSummary() });
       return true;
     }
+  }
+
+  // Live n8n & Activepieces Workflow Automations Hub (/api/automations/*)
+  if (url.startsWith('/api/automations/state') && method === 'GET') {
+    sendJson(res, 200, { ok: true, ...getPublicAutomationsState() });
+    return true;
+  }
+
+  if (url.startsWith('/api/automations/config') && method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const state = updateAutomationConnection(body);
+      sendJson(res, 200, { ok: true, ...state });
+    } catch (err: any) {
+      sendJson(res, 400, { ok: false, error: err.message || 'Config update failed' });
+    }
+    return true;
+  }
+
+  if (url.startsWith('/api/automations/sync') && method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const result = await syncPlatformWorkflows(body.platform);
+      sendJson(res, result.ok ? 200 : 400, result);
+    } catch (err: any) {
+      sendJson(res, 500, { ok: false, error: err.message || 'Workflow sync failed' });
+    }
+    return true;
+  }
+
+  if (url.startsWith('/api/automations/deploy') && method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const result = await deployWorkflowToPlatform(body);
+      sendJson(res, result.ok ? 200 : 400, result);
+    } catch (err: any) {
+      sendJson(res, 500, { ok: false, error: err.message || 'Workflow deploy failed' });
+    }
+    return true;
+  }
+
+  if (url.startsWith('/api/automations/trigger') && method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const result = await triggerAutomationWorkflow(body);
+      sendJson(res, 200, result);
+    } catch (err: any) {
+      sendJson(res, 500, { ok: false, error: err.message || 'Workflow trigger failed' });
+    }
+    return true;
   }
 
   return false;

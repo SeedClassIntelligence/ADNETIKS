@@ -10,6 +10,9 @@ import {
   CampaignTemplate,
   TemplateCategory,
 } from '../data/campaignTemplates';
+import { AUTOMATION_TEMPLATES } from '../data/automationTemplates';
+import { BrandProfile } from '../types';
+import WorkflowAutomationsView from './WorkflowAutomationsView';
 import {
   BookOpen,
   Sparkles,
@@ -26,9 +29,11 @@ import {
   Zap,
   Image as ImageIcon,
   Code2,
+  Workflow,
 } from 'lucide-react';
 
 interface ResourcesPageProps {
+  brandProfile: BrandProfile;
   onUseTemplate: (template: CampaignTemplate) => void;
   onStartSectionTour: (sectionKey: string) => void;
   showNotificationToast: (title: string, message: string) => void;
@@ -109,11 +114,12 @@ const BRAND_KIT_FILES = [
 ];
 
 export default function ResourcesPage({
+  brandProfile,
   onUseTemplate,
   onStartSectionTour,
   showNotificationToast,
 }: ResourcesPageProps) {
-  const [activeTab, setActiveTab] = useState<'templates' | 'tours' | 'playbooks' | 'brand_kit'>('templates');
+  const [activeTab, setActiveTab] = useState<'templates' | 'automations' | 'tours' | 'playbooks' | 'brand_kit'>('templates');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | TemplateCategory>('all');
 
@@ -163,6 +169,7 @@ export default function ResourcesPage({
         >
           {[
             { id: 'templates' as const, label: `Templates (${CAMPAIGN_TEMPLATES.length})`, icon: Sparkles },
+            { id: 'automations' as const, label: `Automations (${AUTOMATION_TEMPLATES.length})`, icon: Workflow },
             { id: 'tours' as const, label: 'Guided Tours', icon: Compass },
             { id: 'playbooks' as const, label: 'Hook Playbooks', icon: Code2 },
             { id: 'brand_kit' as const, label: 'Brand Kit', icon: ImageIcon },
@@ -186,6 +193,14 @@ export default function ResourcesPage({
           })}
         </div>
       </div>
+
+      {/* TAB 2: WORKFLOW AUTOMATIONS LIBRARY (n8n & Activepieces) */}
+      {activeTab === 'automations' && (
+        <WorkflowAutomationsView
+          brandProfile={brandProfile}
+          showNotificationToast={showNotificationToast}
+        />
+      )}
 
       {/* TAB 1: HIGH-CONVERTING CAMPAIGN TEMPLATES LIBRARY */}
       {activeTab === 'templates' && (
