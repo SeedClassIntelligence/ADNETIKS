@@ -11,6 +11,8 @@ import { generateText } from './llmProvider.ts';
 import { extractFirstUrl, scrapeUrlContext } from './ingest.ts';
 import { buildActiveMemoryPromptBlock } from './memory.ts';
 import { recordUsageEvent } from './usageLedger.ts';
+import { generateBrandAdCreative, type AdCreativeStyle } from './adCreativeEngine.ts';
+import { saveDataUrlMedia } from './storage.ts';
 
 async function enrichSourceIfUrl(sourceInput: string, sourceType?: string) {
   const url = extractFirstUrl(sourceInput || '');
@@ -47,6 +49,14 @@ export interface GenerateContentPayload {
     archetype: string;
     voiceAttributes: string[];
     bannedWords: string[];
+    tagline?: string;
+    websiteUrl?: string;
+    brandColors?: {
+      primary: string;
+      secondary: string;
+      background: string;
+      swatches: string[];
+    };
   };
   customerAvatar: {
     name: string;
@@ -146,85 +156,214 @@ Return STRICTLY valid JSON conforming to this schema:
   return { ...generateHeuristicContent(groundedPayload), scraped, appliedMemoryCount };
 }
 
+function extractWebsiteInsights(payload: GenerateContentPayload) {
+  const raw = payload.sourceInput || '';
+  const brandName = payload.brandProfile.name || 'Our Brand';
+
+  // Extract domain/URL if present in sourceInput or brandProfile
+  const urlMatch = raw.match(/https?:\/\/[^\s)"']+/i);
+  const websiteUrl = payload.brandProfile.websiteUrl || urlMatch?.[0] || '';
+  let domain = '';
+  try {
+    if (websiteUrl) domain = new URL(websiteUrl).hostname.replace(/^www\./i, '');
+  } catch {
+    domain = '';
+  }
+
+  // Parse structured multi-page Brand Dossier blocks ([PAGE: Label (/path)], Headings: ..., Key Copy: ...)
+  const pages: Array<{ label: string; headings: string[]; copy: string }> = [];
+  const pageRegex = /\[PAGE:\s*([^\]]+)\]\s*[\r\n]+Headings:\s*([^\r\n]*)[\r\n]+Key Copy:\s*([^\r\n]+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = pageRegex.exec(raw)) !== null) {
+    const label = m[1].replace(/\s*\([^)]*\)\s*$/, '').trim();
+    const headings = m[2]
+      .split('|')
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 6 && s.toLowerCase() !== brandName.toLowerCase());
+    const copy = m[3].trim();
+    pages.push({ label, headings, copy });
+  }
+
+  // Gather crisp headings & real sentences from the website
+  const allHeadings = pages.flatMap((p) => p.headings);
+  const allCopySentences = pages
+    .map((p) => p.copy)
+    .join(' ')
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.replace(/\s+/g, ' ').trim())
+    .filter((s) => s.length >= 24 && s.length <= 185 && !/^(home|sign in|create account|log in|menu|skip to)/i.test(s));
+
+  // Fall back cleanly if raw input was a brief or simple scraped title/desc
+  const cleanFirstLine = raw
+    .replace(/^Full-Site Multi-Page Brand Dossier \([^)]+\):\s*/i, '')
+    .replace(/https?:\/\/\S+/gi, '')
+    .split('\n')[0]
+    .replace(/\(\s*\)/g, '')
+    .trim();
+
+  const heroHook =
+    allHeadings.find((h) => h.length >= 12 && h.length <= 90) ||
+    (payload.brandProfile.tagline && payload.brandProfile.tagline.length >= 12 ? payload.brandProfile.tagline : '') ||
+    (cleanFirstLine.length >= 12 ? cleanFirstLine.slice(0, 85) : `${brandName} — A Smarter Way Forward`);
+
+  const corePromise =
+    allCopySentences[0] ||
+    payload.brandProfile.tagline ||
+    `${brandName} gives you transparent, side-by-side clarity without the guesswork or sales pressure.`;
+
+  const secondaryProof =
+    allCopySentences.find((s) => s !== corePromise && s.length >= 28) ||
+    allHeadings.find((h) => h !== heroHook && h.length >= 14) ||
+    `See real, verifiable differences before you ever commit.`;
+
+  const comparePage = pages.find((p) => /compar|pricing|plan|diff/i.test(p.label));
+  const providerPage = pages.find((p) => /provider|carrier|partner|business|pro|enterprise/i.test(p.label));
+  const aboutPage = pages.find((p) => /about|mission|why|how/i.test(p.label));
+
+  const fullTextLower = `${brandName} ${raw} ${payload.brandProfile.tagline || ''} ${payload.campaignGoal || ''}`.toLowerCase();
+  const isInsuranceOrCompare = /\b(insurance|polici|policy|carrier|coverage|quote|broker|lead|compare|fintech|loan|mortgage)\b/i.test(fullTextLower);
+  const isMusic = /\b(music|track|song|album|tour|concert|spotify|vinyl|record label)\b/i.test(fullTextLower);
+  const isArt = /\b(artwork|artist|painting|gallery|sculpture|print drop|visual art)\b/i.test(fullTextLower);
+  const isEcommerce = /\b(shop|store|cart|checkout|apparel|merch|shipping|streetwear|capsule)\b/i.test(fullTextLower);
+
+  const brandTag = `#${brandName.replace(/[^a-zA-Z0-9]/g, '') || 'Brand'}`;
+
+  let oldWayPoints = [
+    'Opaque pricing & vague marketing promises',
+    'High-pressure sales calls before you even see the facts',
+    'Hours wasted comparing scattered tabs & fine print',
+  ];
+  let newWayPoints = [
+    heroHook.slice(0, 56),
+    corePromise.slice(0, 62),
+    `Verify everything on ${domain || brandName} on your terms`,
+  ];
+
+  if (isInsuranceOrCompare) {
+    oldWayPoints = [
+      'Your phone sold as a "lead" to 10+ aggressive brokers',
+      'Confusing quotes hiding deductibles & coverage gaps',
+      'Endless spam calls before you even see real numbers',
+    ];
+    newWayPoints = [
+      'Compare documented offers 100% privately',
+      'Review factual coverage & price differences side-by-side',
+      'YOU choose which provider is allowed to contact you',
+    ];
+  }
+
+  return {
+    brandName,
+    domain,
+    websiteUrl,
+    heroHook,
+    corePromise,
+    secondaryProof,
+    pages,
+    comparePage,
+    providerPage,
+    aboutPage,
+    isInsuranceOrCompare,
+    isMusic,
+    isArt,
+    isEcommerce,
+    brandTag,
+    oldWayPoints,
+    newWayPoints,
+  };
+}
+
 function generateHeuristicContent(payload: GenerateContentPayload) {
   const avatarName = payload.customerAvatar.name;
-  const painPoint = payload.customerAvatar.painPoints[0] || 'reaching and engaging your real audience';
   const brandName = payload.brandProfile.name;
-  const cleanedSource = payload.sourceInput
-    .replace(/^Full-Site Multi-Page Brand Dossier \([^)]+\):\s*/i, '')
-    .replace(/^https?:\/\//i, '')
-    .split('\n')[0]
-    .trim();
-  const inputSnippet = cleanedSource.slice(0, 80) || brandName;
-  const inputLower = `${cleanedSource} ${payload.campaignGoal || ''}`.toLowerCase();
-
-  const isMusic = /\b(music|track|song|album|tour|concert|spotify|vinyl|record label)\b/i.test(inputLower);
-  const isArt = /\b(artwork|artist|painting|gallery|sculpture|print drop|visual art)\b/i.test(inputLower);
+  const ins = extractWebsiteInsights(payload);
+  const ctaLink = ins.domain ? ins.domain : brandName;
 
   const variants = payload.platforms.map((platform) => {
     let varAContent = '';
     let varBContent = '';
     let hashtags: string[] = [];
 
-    if (isMusic) {
+    if (ins.isMusic) {
       if (platform === 'instagram' || platform === 'tiktok') {
-        varAContent = `New drop alert 🔊 We just released what we've been working on in the studio.\n\nEvery track was produced with relentless attention to frequency and feeling. Available everywhere now.\n\nLink in bio to stream and let us know your favorite record in the comments! ⚡`;
-        varBContent = `Most artists release music and hope the algorithm finds the right ears.\n\nWe designed this release directly for the listeners who need this sound right now.\n\nTurn this up in your headphones and tell us what you feel. 🖤`;
-        hashtags = ['#NewMusic', '#NowStreaming', '#MusicProducer', '#IndieMusic', '#ConcertLife'];
-      } else if (platform === 'x' || platform === 'threads') {
-        varAContent = `The new music drop is officially live.\n\n3 reasons this project hits different:\n1. Zero filler tracks\n2. Real analog instrumentation\n3. Built for the stage\n\nStream now on all platforms 🎧👇`;
-        varBContent = `Stop making art for the algorithm.\n\nMake what resonates with the people who stay until the venue lights turn back on.\n\nNew record out now. Link below 🔗`;
-        hashtags = ['#NewDrop', '#MusicScene', '#ArtistCommunity'];
+        varAContent = `New drop alert 🔊 ${ins.heroHook}\n\n${ins.corePromise}\n\nLink in bio to listen now and drop your favorite track below! ⚡`;
+        varBContent = `Most artists release music and hope the algorithm finds the right ears.\n\nWe built ${brandName} for listeners who actually feel every record.\n\nTurn this up in your headphones today. 🖤`;
+        hashtags = [ins.brandTag, '#NewMusic', '#NowStreaming', '#IndieMusic'];
       } else {
-        varAContent = `Excited to present the official release of our latest creative project: ${inputSnippet}.\n\nCrafted specifically for ${avatarName} and our core listener community.\n\nStream the full release on all major DSPs now.`;
-        varBContent = `Artistic independence means owning your sound and communicating directly with your supporters.\n\nOur latest release is live. Thank you to everyone supporting the vision.`;
-        hashtags = ['#MusicIndustry', '#CreativeDirection', '#ReleaseDay'];
+        varAContent = `${ins.heroHook}\n\n${ins.corePromise}\n\nStream the full release now → ${ctaLink}`;
+        varBContent = `Artistic independence means owning your sound and speaking directly to your real fans.\n\n${ins.secondaryProof}\n\nListen now at ${ctaLink}.`;
+        hashtags = [ins.brandTag, '#NewRelease', '#IndependentArtist'];
       }
-    } else if (isArt) {
-      if (platform === 'instagram' || platform === 'tiktok') {
-        varAContent = `New visual showcase 🎨 Taking you behind the creation of this piece.\n\nEvery stroke, shadow, and palette decision was calibrated to evoke raw emotion.\n\nSwipe through to see the progression. Limited prints dropping this week. 🖤`;
-        varBContent = `What happens when you stop following trends and build something authentic?\n\nThis piece was made for ${avatarName} and anyone who values artistic obsession over mass reproduction.\n\nWhich detail catches your eye first?`;
-        hashtags = ['#VisualArt', '#ContemporaryArt', '#ArtCollector', '#DesignInspiration'];
+    } else if (ins.isInsuranceOrCompare) {
+      const compareLine = ins.comparePage?.headings?.[0]
+        ? `Side-by-side ${ins.comparePage.label}: ${ins.comparePage.headings[0]}`
+        : `Side-by-side factual coverage & price comparison with zero guesswork`;
+      const providerLine = ins.providerPage
+        ? `Even ${ins.providerPage.label} win — because every buyer who reaches out actually chose them.`
+        : `You stay anonymous until you pick the exact provider you want to talk to.`;
+
+      if (platform === 'linkedin') {
+        varAContent = `${ins.heroHook}\n\nLook at how broken shopping for coverage has become: you enter your phone number to see one quote, and within 60 seconds your details are sold to a dozen call centers.\n\n${brandName} flips the entire model:\n→ ${ins.corePromise}\n→ ${compareLine}\n→ ${providerLine}\n\nNo lead brokers. No spam calls. Just documented facts so you make the smartest financial decision on your terms.\n\nCompare privately in under 2 minutes → ${ctaLink}`;
+        varBContent = `Why do "free quote" websites ask for your phone number before showing you a single real policy?\n\nBecause on those sites, you aren't the customer — you're the lead being sold.\n\nAt ${brandName}, we built the opposite:\n✓ 100% private side-by-side policy comparison\n✓ Verified coverage & price differences in plain English\n✓ Zero unwanted calls — you decide who may contact you\n\n${ins.heroHook}\n\nSee the difference yourself at ${ctaLink}.`;
+        hashtags = [ins.brandTag, '#ConsumerFirst', '#InsuranceTransparency', '#SmartComparison', '#NoSpam'];
+      } else if (platform === 'x' || platform === 'threads') {
+        varAContent = `${ins.heroHook}\n\nStop giving your phone number to "quote" sites that sell it to 15 brokers.\n\nOn ${brandName}:\n• Compare documented offers privately\n• See real coverage & price gaps side-by-side\n• YOU choose who gets to contact you\n\nTry it free → ${ctaLink}`;
+        varBContent = `Unpopular truth about online insurance quotes:\n\nIf you have to surrender your phone number before seeing real numbers, you are the product.\n\n${brandName} lets you compare factual policies privately — zero spam calls, total control.\n\nCheck it out → ${ctaLink}`;
+        hashtags = [ins.brandTag, '#NoSpamQuotes', '#ConsumerPrivacy'];
+      } else if (platform === 'instagram') {
+        varAContent = `${ins.heroHook} 🛡️\n\nTired of getting 20 spam calls just for asking what a policy costs?\n\nWith ${brandName}, you compare documented coverage and prices privately — and ONLY the provider you pick can contact you.\n\nTap the link in bio to compare privately at ${ctaLink} ✨`;
+        varBContent = `Old way: Fill out 1 form → get spammed for 3 weeks. ❌\n\nThe ${brandName} way:\n✅ Compare real coverage & prices side-by-side\n✅ Keep your info private\n✅ Choose who contacts you\n\nSave this before your next renewal! Link in bio → ${ctaLink}`;
+        hashtags = [ins.brandTag, '#SmartMoney', '#InsuranceTips', '#ConsumerRights'];
       } else {
-        varAContent = `Revealing our newest creative work: ${inputSnippet}.\n\nDesigned to push visual boundaries while staying true to the ${brandName} aesthetic.\n\nFull gallery and acquisition details now open.`;
-        varBContent = `True aesthetic impact comes from bold visual conviction.\n\nTake a closer look at our latest piece and the story behind it.`;
-        hashtags = ['#ArtDirection', '#VisualDesign', '#Creatives'];
+        varAContent = `POV: You needed to compare insurance without your phone blowing up for 2 weeks straight. 🛡️\n\n"${ins.heroHook}" — ${brandName} lets you compare real documented offers privately and pick who calls you.\n\nCheck ${ctaLink} before you renew!`;
+        varBContent = `Never type your phone number into a random quote site again. 🛑\n\nHere's how ${brandName} lets you compare factual coverage & prices privately with ZERO spam calls → ${ctaLink}`;
+        hashtags = [ins.brandTag, '#MoneyTok', '#AdultingTips', '#NoSpam'];
       }
     } else {
+      const pageBullets =
+        ins.pages.length >= 2
+          ? ins.pages
+              .slice(0, 3)
+              .map((p) => `→ ${p.label}: ${p.headings[0] || p.copy.slice(0, 75)}`)
+              .join('\n')
+          : `→ ${ins.corePromise}\n→ ${ins.secondaryProof}\n→ Built directly around what ${avatarName} actually needs`;
+
       if (platform === 'linkedin') {
-        varAContent = `We analyzed our campaigns across the last 90 days.\n\nThe single biggest shift?\n\nAligning content directly with ${avatarName}'s core priority: ${painPoint.toLowerCase()}.\n\n3 key outcomes:\n→ 3.4x higher audience resonance\n→ 52% reduction in production friction\n→ 100% adherence to ${brandName} standards\n\nNo vanity metrics. Just real engagement.`;
-        varBContent = `Most teams waste hours creating content that gets lost in the feed.\n\nWhy? Because they broadcast announcements instead of addressing what keeps ${avatarName} up at night.\n\nWhen you solve real friction like ${painPoint.toLowerCase()}, your message becomes magnetic.`;
-        hashtags = ['#CreativeStrategy', '#BrandBuilding', '#Growth', '#Leadership'];
+        varAContent = `${ins.heroHook}\n\n${ins.corePromise}\n\nHere is what sets ${brandName} apart:\n${pageBullets}\n\nStop settling for bloated alternatives that waste your time and budget. See how ${brandName} works in real life → ${ctaLink}`;
+        varBContent = `Most options in this space promise the world and bury the truth in fine print.\n\nWe built ${brandName} to fix that:\n${ins.corePromise}\n\n${ins.secondaryProof}\n\nReady to see the difference for yourself? Visit ${ctaLink}.`;
+        hashtags = [ins.brandTag, '#Growth', '#ProductClarity', '#BetterWay'];
       } else if (platform === 'x' || platform === 'threads') {
-        varAContent = `How to solve ${painPoint.toLowerCase()} without burning out your team:\n\n1. Lock your target audience triggers\n2. Calibrate brand voice dials\n3. Automate delivery to peak windows\n4. A/B split-test every hook\n\nFull breakdown below 🧵👇`;
-        varBContent = `Unpopular opinion: If your content isn’t generating inbound conversations, it’s not an algorithm problem.\n\nIt’s an audience resonance problem.\n\nSpeak directly to the priorities ${avatarName} cares about today.`;
-        hashtags = ['#CreatorEconomy', '#BrandStrategy', '#BuildingInPublic'];
+        varAContent = `${ins.heroHook}\n\n${ins.corePromise}\n\nNo fluff. No hidden catch. Just real results.\n\nExplore ${brandName} → ${ctaLink}`;
+        varBContent = `Why do so many people still put up with the slow, outdated way?\n\n${brandName} gives you ${ins.corePromise.charAt(0).toLowerCase() + ins.corePromise.slice(1)}\n\nSee it live → ${ctaLink}`;
+        hashtags = [ins.brandTag, '#BuiltBetter', '#Launch'];
       } else if (platform === 'instagram') {
-        varAContent = `Swipe through the exact framework we use at ${brandName} to eliminate ${painPoint.toLowerCase()} across multi-channel campaigns. 📊\n\nSave this post for your next planning session!`;
-        varBContent = `Behind the scenes of high-velocity creative content: it is not about more noise. It is about authentic resonance. ✨\n\nDouble tap if your team is focusing on quality over volume this season.`;
-        hashtags = ['#ContentDesign', '#CreativeDirector', '#VisualStrategy'];
-      } else if (platform === 'tiktok') {
-        varAContent = `POV: You stopped guessing what to post and started matching your message to real audience psychology. ${avatarName} will love this teardown. 📈`;
-        varBContent = `The exact reason your posts are getting scrolled past (and how to fix your hook in 10 seconds). 🔥`;
-        hashtags = ['#CreatorTok', '#Storytelling', '#WorkSmarter'];
+        varAContent = `${ins.heroHook} ⚡\n\n${ins.corePromise}\n\n${ins.secondaryProof}\n\nTap the link in bio to see ${brandName} in action → ${ctaLink}`;
+        varBContent = `Stop guessing. Start comparing real outcomes. ✨\n\n${brandName} was built so you get clarity in minutes instead of weeks.\n\nLink in bio → ${ctaLink}`;
+        hashtags = [ins.brandTag, '#ModernBrand', '#SmartChoice'];
       } else {
-        varAContent = `Transparent breakdown: Here is how we addressed ${painPoint.toLowerCase()} for ${avatarName} and increased organic distribution by 240%.\n\nKey takeaway: consistency beats sporadic viral attempts every single time.`;
-        varBContent = `The hardest part of modern communication isn’t ideation. It’s maintaining relentless voice standards across multiple channels simultaneously.\n\nHere is how we solved it.`;
-        hashtags = ['#BrandStrategy', '#CreativeLeadership'];
+        varAContent = `Wait until you see how ${brandName} simplifies this. 👀\n\n${ins.heroHook} — ${ins.corePromise}\n\nLink in bio (${ctaLink})!`;
+        varBContent = `Stop wasting hours doing this the old way. 🛑\n\n${brandName}: ${ins.heroHook}.\n\nCheck ${ctaLink} to try it yourself.`;
+        hashtags = [ins.brandTag, '#MustKnow', '#GameChanger'];
       }
     }
 
     return {
       platform,
       variantA: {
-        hookAngle: isMusic ? 'Direct High-Energy Hook' : 'Hard Data & Concrete Teardown',
+        hookAngle: ins.isInsuranceOrCompare
+          ? 'Direct Privacy & Comparison Offer'
+          : ins.isMusic
+          ? 'Direct Release Drop Hook'
+          : 'Direct Value Proposition & Offer',
         content: varAContent,
         hashtags,
       },
       variantB: {
-        hookAngle: isMusic ? 'Emotional Fan Connection' : 'Contrarian Narrative & Resonance',
+        hookAngle: ins.isInsuranceOrCompare
+          ? 'Problem–Agitate–Solve (Stop Lead Spam)'
+          : 'Contrarian Old-Way vs. New-Way Hook',
         content: varBContent,
-        hashtags: hashtags.slice(0, 3),
+        hashtags: hashtags.slice(0, 4),
       },
     };
   });
@@ -233,11 +372,14 @@ function generateHeuristicContent(payload: GenerateContentPayload) {
     receptivity: {
       score: 95,
       level: 'High',
-      rationale: `The campaign concept strongly aligns with ${avatarName}'s core interests and directly answers: "${painPoint}".`,
-      suggestedHookAngle: isMusic ? 'Lead with sonic immersion and live concert excitement.' : 'Lead with concrete value and authentic tone.',
+      rationale: `Direct-response ad copy grounded directly in ${brandName}'s crawled website claims ("${ins.heroHook.slice(0, 60)}") and tailored to ${avatarName}.`,
+      suggestedHookAngle: ins.heroHook,
     },
-    visualPrompt: `High-fidelity creative visual asset for ${brandName} featuring dynamic studio lighting, obsidian background, and bold crimson styling, 4:3 ratio`,
-    sourceSnippet: inputSnippet,
+    adHeadline: ins.heroHook.slice(0, 72),
+    oldWayPoints: ins.oldWayPoints,
+    newWayPoints: ins.newWayPoints,
+    visualPrompt: `Clean modern commercial ad visual for ${brandName} conveying "${ins.heroHook}" using ${payload.brandProfile.brandColors?.primary || '#047857'} brand accents, crisp focal composition, minimal text (<15% area), high contrast editorial lighting`,
+    sourceSnippet: ins.heroHook,
     variants,
   };
 }
@@ -245,9 +387,25 @@ function generateHeuristicContent(payload: GenerateContentPayload) {
 export interface GenerateImagePayload {
   prompt: string;
   aspectRatio?: '1:1' | '16:9' | '4:3' | '9:16' | '3:4';
+  creativeStyle?: AdCreativeStyle;
+  headline?: string;
+  subheadline?: string;
+  ctaText?: string;
+  oldWayPoints?: string[];
+  newWayPoints?: string[];
+  preferAiPhoto?: boolean;
   brandProfile: {
     name: string;
     archetype: string;
+    tagline?: string;
+    websiteUrl?: string;
+    brandColors?: {
+      primary: string;
+      secondary: string;
+      background: string;
+      swatches: string[];
+    };
+    brandFonts?: string[];
   };
   customerAvatar?: {
     name: string;
@@ -256,14 +414,19 @@ export interface GenerateImagePayload {
 }
 
 export async function handleGenerateImage(payload: GenerateImagePayload) {
-  // Image generation currently uses Gemini; swap to DALL-E 3 or Stability AI by updating this function
-  const ai = getGeminiClient();
   const aspectRatio = payload.aspectRatio || '1:1';
+  const primaryColor = payload.brandProfile.brandColors?.primary || '#047857';
+  const secondaryColor = payload.brandProfile.brandColors?.secondary || '#B45309';
 
-  // Construct enriched visual prompt grounding in brand and target avatar
-  const fullPrompt = `${payload.prompt}. Brand: ${payload.brandProfile.name} (${payload.brandProfile.archetype} archetype). Tailored for audience: ${payload.customerAvatar?.name || 'Executive Marketers'} (${payload.customerAvatar?.roleTitle || 'B2B Growth Leaders'}). Sleek dark modern aesthetic, sharp commercial studio lighting, high resolution, award-winning advertising visual.`;
+  // Ad-algorithm-compliant art direction prompt (low text density, high visual storytelling)
+  const fullPrompt = `${payload.prompt}. Brand: ${payload.brandProfile.name} (${payload.brandProfile.tagline || payload.brandProfile.archetype}). Brand color accents: ${primaryColor} and ${secondaryColor}. Target audience: ${payload.customerAvatar?.name || 'Decision Makers'} (${payload.customerAvatar?.roleTitle || 'Consumers'}). Editorial commercial advertising visual, ultra-clean composition with clear focal subject, NO tiny text walls, NO browser screenshots, generous negative space for Meta/LinkedIn ad performance, crisp studio lighting.`;
 
-  if (ai) {
+  // 1. Try Live Gemini Image Generation if GEMINI_API_KEY is configured and user wants AI photo (or no specific graphic card requested)
+  const wantGraphicCard =
+    payload.creativeStyle && !payload.preferAiPhoto && !process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY;
+
+  const ai = !wantGraphicCard ? getGeminiClient() : null;
+  if (ai && (!payload.creativeStyle || payload.preferAiPhoto)) {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3.1-flash-lite-image',
@@ -280,16 +443,18 @@ export async function handleGenerateImage(payload: GenerateImagePayload) {
       for (const part of response.candidates?.[0]?.content?.parts ?? []) {
         if (part.inlineData?.data) {
           const mime = part.inlineData.mimeType ?? 'image/png';
+          const dataUrl = `data:${mime};base64,${part.inlineData.data}`;
+          const saved = saveDataUrlMedia(dataUrl, `${payload.brandProfile.name}_ai_ad.png`);
           recordUsageEvent({
             operation: 'generate_image',
             provider: 'gemini',
             model: 'gemini-3.1-flash-lite-image',
             overrideCostUsd: 0.03,
-            meta: `${payload.brandProfile.name} (${aspectRatio})`,
+            meta: `${payload.brandProfile.name} (${aspectRatio} AI photo)`,
           });
           return {
-            imageUrl: `data:${mime};base64,${part.inlineData.data}`,
-            source: 'gemini-3.1-flash-lite-image',
+            imageUrl: saved.url,
+            source: 'gemini-ai-image',
             prompt: fullPrompt,
             aspectRatio,
             success: true,
@@ -301,27 +466,111 @@ export async function handleGenerateImage(payload: GenerateImagePayload) {
     }
   }
 
-  // High-fidelity fallback asset selector
-  recordUsageEvent({
-    operation: 'generate_image',
-    provider: 'heuristic',
-    model: 'adnetiks-brand-asset-engine',
-    overrideCostUsd: 0,
-    meta: `${payload.brandProfile.name} (${aspectRatio} local asset)`,
+  // 2. Try Live OpenAI Image Generation (gpt-image-1 / dall-e-3) if OPENAI_API_KEY is configured
+  const openAiKey = process.env.OPENAI_API_KEY;
+  if (openAiKey && (!payload.creativeStyle || payload.preferAiPhoto)) {
+    try {
+      const size =
+        aspectRatio === '16:9' || aspectRatio === '4:3'
+          ? '1536x1024'
+          : aspectRatio === '9:16' || aspectRatio === '3:4'
+          ? '1024x1536'
+          : '1024x1024';
+      const resp = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${openAiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-image-1',
+          prompt: fullPrompt,
+          size,
+        }),
+      });
+      if (resp.ok) {
+        const json: any = await resp.json();
+        const b64 = json?.data?.[0]?.b64_json;
+        if (b64) {
+          const saved = saveDataUrlMedia(`data:image/png;base64,${b64}`, `${payload.brandProfile.name}_openai_ad.png`);
+          recordUsageEvent({
+            operation: 'generate_image',
+            provider: 'openai',
+            model: 'gpt-image-1',
+            overrideCostUsd: 0.04,
+            meta: `${payload.brandProfile.name} (${aspectRatio} AI photo)`,
+          });
+          return {
+            imageUrl: saved.url,
+            source: 'openai-gpt-image-1',
+            prompt: fullPrompt,
+            aspectRatio,
+            success: true,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('OpenAI image generation encountered error:', err);
+    }
+  }
+
+  // 3. ZERO FAKE STOCK PHOTOS: Render a genuine, brand-styled, low-text-density commercial ad PNG
+  // tailored directly to this brand's real colors, headline, tagline, and offer!
+  const cleanHeadline =
+    payload.headline ||
+    payload.brandProfile.tagline ||
+    payload.prompt.split('.')[0].slice(0, 68) ||
+    payload.brandProfile.name;
+
+  const isInsurance = /insurance|polici|policy|carrier|quote|lead|compare/i.test(
+    `${payload.brandProfile.name} ${payload.brandProfile.tagline || ''} ${payload.prompt}`
+  );
+
+  const creative = await generateBrandAdCreative({
+    brandName: payload.brandProfile.name,
+    domain: payload.brandProfile.websiteUrl,
+    tagline: payload.brandProfile.tagline,
+    headline: cleanHeadline,
+    subheadline: payload.subheadline || payload.brandProfile.tagline,
+    ctaText: payload.ctaText || (isInsurance ? 'Compare Privately' : 'Learn More'),
+    eyebrow: payload.brandProfile.archetype || payload.brandProfile.name,
+    style: payload.creativeStyle || (aspectRatio === '9:16' ? 'social_story' : 'editorial_hook'),
+    aspectRatio,
+    palette: payload.brandProfile.brandColors,
+    fonts: payload.brandProfile.brandFonts,
+    oldWayPoints:
+      payload.oldWayPoints ||
+      (isInsurance
+        ? [
+            'Phone number sold to 10+ aggressive brokers',
+            'Confusing fine print & hidden coverage gaps',
+            'Spam calls before seeing a single real price',
+          ]
+        : undefined),
+    newWayPoints:
+      payload.newWayPoints ||
+      (isInsurance
+        ? [
+            'Compare documented policies 100% privately',
+            'Side-by-side factual coverage & price clarity',
+            'You choose which provider may contact you',
+          ]
+        : undefined),
   });
-  const fallbackImages = [
-    '/src/assets/images/campaign_creative_asset_1793456644284.jpg',
-    '/src/assets/images/adnetiks_hero_banner_1793456625181.jpg',
-    '/src/assets/images/avatar_brand_strategist_1793456772495.jpg',
-    '/src/assets/images/avatar_tech_founder_1793456642984.jpg',
-  ];
-  const selectedFallback = fallbackImages[Math.floor(Math.random() * fallbackImages.length)];
 
   return {
-    imageUrl: selectedFallback,
-    source: 'adnetiks-brand-asset-engine',
+    imageUrl: creative.imageUrl,
+    source: 'adnetiks-brand-creative-studio',
+    style: creative.style,
+    format: creative.format,
+    width: creative.width,
+    height: creative.height,
     prompt: fullPrompt,
     aspectRatio,
+    aiPhotoHint:
+      !process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY
+        ? 'Connect a Gemini or OpenAI API key in AI & Connectors to also generate bespoke AI photography.'
+        : undefined,
     success: true,
   };
 }

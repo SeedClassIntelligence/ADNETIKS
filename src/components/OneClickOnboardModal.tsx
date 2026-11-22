@@ -29,6 +29,7 @@ export interface OneClickOnboardResultPayload {
   generatedPosts: PostVariant[];
   scannedPagesCount: number;
   scan?: any;
+  generatedCreatives?: Array<{ imageUrl: string; style: string; width?: number; height?: number }>;
 }
 
 interface OneClickOnboardModalProps {
@@ -79,6 +80,7 @@ export default function OneClickOnboardModal({
     avatars: CustomerAvatar[];
     campaign: Campaign;
     generatedPosts: PostVariant[];
+    generatedCreatives?: Array<{ imageUrl: string; style: string; width?: number; height?: number }>;
     receptivity?: { score: number; level: string; rationale: string };
   } | null>(null);
 
@@ -143,6 +145,7 @@ export default function OneClickOnboardModal({
         generatedPosts: result.generatedPosts,
         scannedPagesCount: result.scan?.crawledPages?.length || 1,
         scan: result.scan,
+        generatedCreatives: result.generatedCreatives,
       },
       destination
     );
@@ -312,15 +315,20 @@ export default function OneClickOnboardModal({
                   )}
                 </div>
 
-                {/* Screenshot + Brand DNA Preview */}
+                {/* Generated Ad Creative + Brand DNA Preview */}
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5 items-center">
-                  {result.scan?.desktopScreenshotUrl && (
-                    <div className="sm:col-span-5 rounded-xl overflow-hidden border border-[#2A2A38] bg-black aspect-video">
+                  {(result.generatedCreatives?.[0]?.imageUrl || result.scan?.desktopScreenshotUrl) && (
+                    <div className="sm:col-span-5 rounded-xl overflow-hidden border border-[#2A2A38] bg-black aspect-video relative">
                       <img
-                        src={result.scan.desktopScreenshotUrl}
+                        src={result.generatedCreatives?.[0]?.imageUrl || result.scan?.desktopScreenshotUrl}
                         alt={result.brandProfile.name}
-                        className="w-full h-full object-cover object-top"
+                        className="w-full h-full object-cover object-center"
                       />
+                      {result.generatedCreatives?.[0]?.imageUrl && (
+                        <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded bg-black/80 text-emerald-300 text-[9px] font-mono font-bold border border-emerald-700/50">
+                          Generated Ad Creative
+                        </span>
+                      )}
                     </div>
                   )}
                   <div className="sm:col-span-7 space-y-2">

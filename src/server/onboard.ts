@@ -11,6 +11,7 @@
 
 import { runFullWebsiteBrandScan } from './brandScanner.ts';
 import { handleDiscoverAvatars, handleGenerateContent } from './api.ts';
+import { generateBrandAdCreative } from './adCreativeEngine.ts';
 
 export interface OneClickOnboardPayload {
   url: string;
@@ -179,12 +180,15 @@ export async function runOneClickOnboarding(payload: OneClickOnboardPayload) {
     payload.campaignGoal ||
     `Launch ${brandProfile.name} with multi-page brand messaging across ${platforms.join(', ')}`;
 
-  const contentResult = await handleGenerateContent({
+  const contentResult: any = await handleGenerateContent({
     brandProfile: {
       name: brandProfile.name,
       archetype: brandProfile.archetype,
       voiceAttributes: brandProfile.voiceAttributes,
       bannedWords: brandProfile.bannedWords,
+      tagline: brandProfile.tagline,
+      websiteUrl: brandProfile.websiteUrl,
+      brandColors: brandProfile.brandColors,
     },
     customerAvatar: {
       name: primaryAvatar.name,
@@ -198,6 +202,42 @@ export async function runOneClickOnboarding(payload: OneClickOnboardPayload) {
     campaignGoal,
     platforms,
   });
+
+  // STEP 5: Generate Real, Low-Text-Density, Brand-Styled Ad Creatives (NOT raw webpage screenshots!)
+  const adHeadline = contentResult?.adHeadline || scan.headings?.[0] || brandProfile.tagline;
+  const isCompareDomain = /insurance|polici|policy|compare|quote|carrier/i.test(dossierInput);
+  const [creativeA, creativeB] = await Promise.all([
+    generateBrandAdCreative({
+      brandName: brandProfile.name,
+      domain: scan.domain,
+      tagline: brandProfile.tagline,
+      headline: adHeadline,
+      subheadline: brandProfile.tagline,
+      ctaText: isCompareDomain ? 'Compare Privately' : 'Get Started',
+      eyebrow: brandProfile.targetIndustry,
+      style: 'editorial_hook',
+      aspectRatio: '16:9',
+      palette: brandProfile.brandColors,
+      fonts: brandProfile.brandFonts,
+      oldWayPoints: contentResult?.oldWayPoints,
+      newWayPoints: contentResult?.newWayPoints,
+    }),
+    generateBrandAdCreative({
+      brandName: brandProfile.name,
+      domain: scan.domain,
+      tagline: brandProfile.tagline,
+      headline: adHeadline,
+      subheadline: brandProfile.tagline,
+      ctaText: isCompareDomain ? 'See Real Differences' : 'Explore Now',
+      eyebrow: `${brandProfile.name} Comparison`,
+      style: 'old_vs_new',
+      aspectRatio: '1:1',
+      palette: brandProfile.brandColors,
+      fonts: brandProfile.brandFonts,
+      oldWayPoints: contentResult?.oldWayPoints,
+      newWayPoints: contentResult?.newWayPoints,
+    }),
+  ]);
 
   // Assemble Saved Campaign & Ready Post Variants
   const crawledLabels = (scan.crawledPages || []).map((p) => p.label).filter(Boolean);
@@ -221,7 +261,8 @@ export async function runOneClickOnboarding(payload: OneClickOnboardPayload) {
     createdAt: new Date().toISOString().slice(0, 10),
   };
 
-  const heroMedia = scan.desktopScreenshotUrl || scan.ogImageUrl || '/src/assets/images/campaign_creative_asset_1793456644284.jpg';
+  const primaryAdMedia = creativeA.imageUrl;
+  const secondaryAdMedia = creativeB.imageUrl;
   const now = Date.now();
   const generatedPosts: any[] = [];
   (contentResult?.variants || []).forEach((v: any, idx: number) => {
@@ -235,7 +276,7 @@ export async function runOneClickOnboarding(payload: OneClickOnboardPayload) {
         content: v.variantA.content,
         hashtags: v.variantA.hashtags || [`#${brandProfile.name.replace(/\W+/g, '')}`],
         platform: plat,
-        mediaUrl: heroMedia,
+        mediaUrl: primaryAdMedia,
         mediaType: 'image',
         scheduledTime: new Date(now + (idx + 1) * 6 * 3600 * 1000).toISOString(),
         status: 'approved',
@@ -247,11 +288,11 @@ export async function runOneClickOnboarding(payload: OneClickOnboardPayload) {
         id: `post-onboard-${now}-${idx}-b`,
         campaignId,
         variantLabel: 'Variant B',
-        hookAngle: v.variantB.hookAngle || 'Story & Comparison Hook',
+        hookAngle: v.variantB.hookAngle || 'Old Way vs New Way Hook',
         content: v.variantB.content,
         hashtags: v.variantB.hashtags || [`#${brandProfile.name.replace(/\W+/g, '')}`],
         platform: plat,
-        mediaUrl: scan.mobileScreenshotUrl || heroMedia,
+        mediaUrl: secondaryAdMedia,
         mediaType: 'image',
         scheduledTime: new Date(now + (idx + 5) * 6 * 3600 * 1000).toISOString(),
         status: 'draft',
@@ -268,6 +309,7 @@ export async function runOneClickOnboarding(payload: OneClickOnboardPayload) {
     avatars: discoveredAvatars.length > 0 ? discoveredAvatars : [primaryAvatar],
     campaign,
     generatedPosts,
+    generatedCreatives: [creativeA, creativeB],
     receptivity: contentResult?.receptivity,
   };
 }

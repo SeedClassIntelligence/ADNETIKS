@@ -162,7 +162,7 @@ export default function ContentStudio({
   // Hydrate Studio immediately when arriving from 1-Click Website Onboarding
   useEffect(() => {
     if (!preloadedOnboard) return;
-    const { scan, campaign, generatedPosts, brandProfile: bp } = preloadedOnboard;
+    const { scan, campaign, generatedPosts, generatedCreatives, brandProfile: bp } = preloadedOnboard;
     if (campaign?.title) setCampaignTitle(campaign.title);
     if (campaign?.goal) setCampaignGoal(campaign.goal);
     if (scan?.url) {
@@ -170,18 +170,35 @@ export default function ContentStudio({
       setSourceInput(scan.url);
       setAdDestinationUrl(scan.url);
     }
-    if (scan?.suggestedHook || bp?.tagline) {
-      setAdHeadline((scan?.suggestedHook || bp?.tagline || '').slice(0, 72));
+    const cleanHeadline = (scan?.headings?.[0] || scan?.suggestedHook || bp?.tagline || '').slice(0, 72);
+    if (cleanHeadline) {
+      setAdHeadline(cleanHeadline);
+      setImagePrompt(`High-converting ad creative for ${bp?.name || 'Brand'}: ${cleanHeadline}`);
     }
     if (scan?.palette?.primary) setActiveBrandAccent(scan.palette.primary);
     if (scan?.palette?.secondary) setActiveBrandSecondary(scan.palette.secondary);
     if (scan) {
       setBrandScanResult(scan);
-      if (scan.desktopScreenshotUrl) {
-        setUploadedScreenshot(scan.desktopScreenshotUrl);
-        setScreenshotFileName(`${scan.domain || 'website'}_capture.png`);
-      }
     }
+
+    // Use generated clean Brand Ad Creatives (NOT raw cluttered website screenshots!)
+    const primaryCreativeUrl = generatedCreatives?.[0]?.imageUrl || generatedPosts?.[0]?.mediaUrl;
+    if (primaryCreativeUrl) {
+      setUploadedScreenshot(primaryCreativeUrl);
+      setScreenshotFileName(`${bp?.name || 'brand'}_ad_creative.png`);
+    }
+    if (Array.isArray(generatedCreatives) && generatedCreatives.length > 0) {
+      const studioAssets: GeneratedVisualAsset[] = generatedCreatives.map((c, idx) => ({
+        id: `onboard-creative-${Date.now()}-${idx}`,
+        prompt: `${bp?.name || 'Brand'} · ${c.style === 'old_vs_new' ? 'Old Way vs New Way Comparison Ad' : 'Editorial Hook Ad Creative'}`,
+        aspectRatio: c.style === 'old_vs_new' ? '1:1' : '16:9',
+        imageUrl: c.imageUrl,
+        createdAt: c.style === 'old_vs_new' ? 'Comparison Ad' : 'Hero Ad Creative',
+        targetAvatarName: selectedAvatar.name,
+      }));
+      setRecentAssets(studioAssets);
+    }
+
     if (Array.isArray(generatedPosts) && generatedPosts.length > 0) {
       setGeneratedVariants((prev) => {
         const next = { ...prev };
@@ -195,7 +212,7 @@ export default function ContentStudio({
               hookAngle: p.hookAngle,
               content: p.content,
               hashtags: p.hashtags,
-              mediaUrl: p.mediaUrl || scan?.desktopScreenshotUrl,
+              mediaUrl: p.mediaUrl || primaryCreativeUrl,
             },
           };
         });
@@ -481,6 +498,7 @@ export default function ContentStudio({
     faviconUrl?: string;
     palette: { primary: string; secondary: string; background: string; textOnPrimary: string; swatches: string[] };
     fonts: string[];
+    headings?: string[];
     visualVibe: string;
     suggestedHook: string;
     crawledPages?: Array<{
@@ -754,69 +772,94 @@ export default function ContentStudio({
       if (data.palette?.primary) setActiveBrandAccent(data.palette.primary);
       if (data.palette?.secondary) setActiveBrandSecondary(data.palette.secondary);
       setAdDestinationUrl(data.url);
-      if (data.suggestedHook) setAdHeadline(data.suggestedHook.slice(0, 72));
+      const scannedHeadline = (data.headings?.[0] || data.suggestedHook || data.tagline || data.brandName).slice(0, 72);
+      setAdHeadline(scannedHeadline);
+      setImagePrompt(`High-converting ad creative for ${data.brandName}: ${scannedHeadline}`);
 
-      // Apply real captured Desktop Website Screenshot across active campaign variants + Media Gallery
-      if (data.desktopScreenshotUrl) {
-        setUploadedScreenshot(data.desktopScreenshotUrl);
-        applyImageToVariants(data.desktopScreenshotUrl);
-        const newAssets: GeneratedVisualAsset[] = [
-          {
-            id: `scan-desk-${Date.now()}`,
-            prompt: `Live Desktop Screenshot (1440×900) of ${data.domain}`,
-            aspectRatio: '16:9',
-            imageUrl: data.desktopScreenshotUrl,
-            createdAt: 'Brand Scan',
-            targetAvatarName: selectedAvatar.name,
-          },
-        ];
-        if (data.mobileScreenshotUrl && data.mobileScreenshotUrl !== data.desktopScreenshotUrl) {
-          newAssets.push({
-            id: `scan-mob-${Date.now() + 1}`,
-            prompt: `Live Mobile Screenshot (430×932) of ${data.domain}`,
-            aspectRatio: '9:16',
-            imageUrl: data.mobileScreenshotUrl,
-            createdAt: 'Brand Scan',
-            targetAvatarName: selectedAvatar.name,
-          });
-        }
-        if (Array.isArray(data.crawledPages)) {
-          data.crawledPages.slice(1).forEach((pg: any, idx: number) => {
-            if (pg.screenshotUrl) {
-              newAssets.push({
-                id: `scan-pg-${Date.now() + idx + 2}`,
-                prompt: `${data.brandName} · ${pg.label} Page Screenshot`,
-                aspectRatio: '16:9',
-                imageUrl: pg.screenshotUrl,
-                createdAt: pg.label,
-                targetAvatarName: selectedAvatar.name,
-              });
-            }
-          });
-        }
-        setRecentAssets((prev) => [...newAssets, ...prev]);
+      // Update global Brand Brain with scanned identity, colors, fonts & logo
+      const updatedProfile = {
+        ...brandProfile,
+        name: data.brandName || brandProfile.name,
+        tagline: data.tagline || brandProfile.tagline,
+        brandColors: data.palette,
+        brandFonts: data.fonts,
+        logoUrl: data.faviconUrl || brandProfile.logoUrl,
+        websiteUrl: data.url,
+      };
+      if (setBrandProfile) {
+        setBrandProfile(updatedProfile);
       }
 
-      // Update global Brand Brain with scanned colors, fonts & logo
-      if (setBrandProfile) {
-        setBrandProfile({
-          ...brandProfile,
-          brandColors: data.palette,
-          brandFonts: data.fonts,
-          logoUrl: data.faviconUrl || brandProfile.logoUrl,
-          websiteUrl: data.url,
-        });
+      // Keep website screenshots as Brand Reference Material on the left,
+      // and generate 2 REAL, low-text-density Brand Ad Creatives for the actual ads!
+      try {
+        const [adHeroRes, adCompareRes] = await Promise.all([
+          fetch('/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: scannedHeadline,
+              aspectRatio: '16:9',
+              creativeStyle: 'editorial_hook',
+              headline: scannedHeadline,
+              subheadline: data.tagline,
+              brandProfile: updatedProfile,
+              customerAvatar: { name: selectedAvatar.name, roleTitle: selectedAvatar.roleTitle },
+            }),
+          }).then((r) => (r.ok ? r.json() : null)),
+          fetch('/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: scannedHeadline,
+              aspectRatio: '1:1',
+              creativeStyle: 'old_vs_new',
+              headline: scannedHeadline,
+              subheadline: data.tagline,
+              brandProfile: updatedProfile,
+              customerAvatar: { name: selectedAvatar.name, roleTitle: selectedAvatar.roleTitle },
+            }),
+          }).then((r) => (r.ok ? r.json() : null)),
+        ]);
+
+        const createdAssets: GeneratedVisualAsset[] = [];
+        if (adHeroRes?.imageUrl) {
+          createdAssets.push({
+            id: `ad-hero-${Date.now()}`,
+            prompt: `${data.brandName} · Editorial Hook Ad Creative`,
+            aspectRatio: '16:9',
+            imageUrl: adHeroRes.imageUrl,
+            createdAt: 'Hero Ad Creative',
+            targetAvatarName: selectedAvatar.name,
+          });
+          setUploadedScreenshot(adHeroRes.imageUrl);
+          applyImageToVariants(adHeroRes.imageUrl);
+        }
+        if (adCompareRes?.imageUrl) {
+          createdAssets.push({
+            id: `ad-cmp-${Date.now() + 1}`,
+            prompt: `${data.brandName} · Old Way vs. New Way Comparison Ad`,
+            aspectRatio: '1:1',
+            imageUrl: adCompareRes.imageUrl,
+            createdAt: 'Comparison Ad',
+            targetAvatarName: selectedAvatar.name,
+          });
+        }
+        if (createdAssets.length > 0) {
+          setRecentAssets(createdAssets);
+        }
+      } catch (e) {
+        console.warn('Auto ad-creative generation warning:', e);
       }
 
       const pageCount = Array.isArray(data.crawledPages) ? data.crawledPages.length : 1;
       showNotificationToast(
-        `Deep Site Scan Complete (${pageCount} Page${pageCount === 1 ? '' : 's'})`,
-        `Captured ${pageCount} page screenshots, ${data.palette.swatches.length} hex colors (${data.palette.primary}), and full-site messaging from ${data.domain}.`
+        `Brand Read (${pageCount} Page${pageCount === 1 ? '' : 's'}) & Ad Creatives Built`,
+        `Analyzed ${data.domain} for messaging & colors (${data.palette.primary}) and generated clean ad creatives + persuasive copy.`
       );
 
-      if (autoSynthesize) {
-        await handleRunFullCampaignSynthesis(data.summaryText || data.url);
-      }
+      // Always synthesize website-grounded copy directly from all crawled pages!
+      await handleRunFullCampaignSynthesis(data.summaryText || data.url, updatedProfile);
       return data;
     } catch (err) {
       console.warn('Brand scan error:', err);
@@ -1080,10 +1123,11 @@ export default function ContentStudio({
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [mobileFoldTruncated, setMobileFoldTruncated] = useState(true);
 
-  // Custom AI Image Generation Integration State
+  // Custom AI Image & Brand Ad Creative Generator State
   const [showImageStudio, setShowImageStudio] = useState(false);
+  const [creativeStyle, setCreativeStyle] = useState<'editorial_hook' | 'old_vs_new' | 'proof_spotlight' | 'social_story'>('old_vs_new');
   const [imagePrompt, setImagePrompt] = useState(
-    `3D isometric high-tech marketing command center with glowing red network nodes, sleek dark glassmorphism dashboard, and executive analytics.`
+    `High-converting clean commercial ad visual tailored to ${brandProfile.name} with bold focal contrast and minimal text.`
   );
   const [imageAspectRatio, setImageAspectRatio] = useState<'1:1' | '16:9' | '4:3' | '9:16'>('4:3');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -1365,8 +1409,11 @@ export default function ContentStudio({
   };
 
   // Full Campaign Synthesis: Discovers Audience + Generates All Variants & Visual Prompts
-  const handleRunFullCampaignSynthesis = async (overrideInput?: string) => {
-    const targetInput = overrideInput || sourceInput;
+  const handleRunFullCampaignSynthesis = async (overrideInput?: string, overrideBrandProfile?: BrandProfile) => {
+    const activeBrand = overrideBrandProfile || brandProfile;
+    const targetInput =
+      overrideInput ||
+      (sourceType === 'url' && brandScanResult?.summaryText ? brandScanResult.summaryText : sourceInput);
     if (!targetInput || !targetInput.trim()) {
       showNotificationToast('Input Required', 'Please enter a URL, brief, or upload a visual asset.');
       return;
@@ -1374,8 +1421,8 @@ export default function ContentStudio({
 
     setIsGenerating(true);
     try {
-      // 0. If URL mode, scrape live webpage metadata & artwork first
-      if (sourceType === 'url' && targetInput.trim().startsWith('http')) {
+      // 0. If URL mode and not already scanned, scrape live webpage metadata first
+      if (sourceType === 'url' && targetInput.trim().startsWith('http') && !brandScanResult) {
         await handleScrapeLiveUrl(targetInput);
       }
 
@@ -1386,11 +1433,11 @@ export default function ContentStudio({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sourceInput: targetInput,
-          sourceType,
+          sourceType: targetInput.startsWith('http') ? 'url' : 'brief',
           campaignGoal,
           brandProfile: {
-            name: brandProfile.name,
-            archetype: brandProfile.archetype,
+            name: activeBrand.name,
+            archetype: activeBrand.archetype,
           },
         }),
       });
@@ -1407,16 +1454,19 @@ export default function ContentStudio({
         }
       }
 
-      // 2. Generate Content Variants with the discovered avatar
+      // 2. Generate Content Variants with the discovered avatar grounded in full-site messaging
       const genRes = await fetch('/api/generate-content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           brandProfile: {
-            name: brandProfile.name,
-            archetype: brandProfile.archetype,
-            voiceAttributes: brandProfile.voiceAttributes,
-            bannedWords: brandProfile.bannedWords,
+            name: activeBrand.name,
+            archetype: activeBrand.archetype,
+            voiceAttributes: activeBrand.voiceAttributes,
+            bannedWords: activeBrand.bannedWords,
+            tagline: activeBrand.tagline,
+            websiteUrl: activeBrand.websiteUrl,
+            brandColors: activeBrand.brandColors,
           },
           customerAvatar: {
             name: discoveredAvatar.name,
@@ -1425,7 +1475,7 @@ export default function ContentStudio({
             emotionalTriggers: discoveredAvatar.emotionalTriggers,
             preferredPlatforms: discoveredAvatar.preferredPlatforms,
           },
-          sourceType,
+          sourceType: targetInput.startsWith('http') ? 'url' : 'brief',
           sourceInput: targetInput,
           campaignGoal,
           platforms: selectedPlatforms,
@@ -1437,6 +1487,9 @@ export default function ContentStudio({
         if (genData.receptivity) {
           setReceptivityScore(genData.receptivity.score || 94);
           setReceptivityRationale(genData.receptivity.rationale || '');
+        }
+        if (genData.adHeadline) {
+          setAdHeadline(genData.adHeadline);
         }
         if (genData.visualPrompt) {
           setImagePrompt(genData.visualPrompt);
@@ -1857,8 +1910,10 @@ export default function ContentStudio({
     }
   };
 
-  // Custom Image Generation Trigger using Gemini 3.1 Flash Lite Image model
-  const handleGenerateCustomImage = async () => {
+  // Custom Ad Creative & AI Image Generator Trigger
+  const handleGenerateCustomImage = async (overrideStyle?: 'editorial_hook' | 'old_vs_new' | 'proof_spotlight' | 'social_story') => {
+    const activeStyle = overrideStyle || creativeStyle;
+    if (overrideStyle) setCreativeStyle(overrideStyle);
     setIsGeneratingImage(true);
     try {
       const response = await fetch('/api/generate-image', {
@@ -1866,10 +1921,18 @@ export default function ContentStudio({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: imagePrompt,
-          aspectRatio: imageAspectRatio,
+          aspectRatio: activeStyle === 'social_story' ? '9:16' : imageAspectRatio,
+          creativeStyle: activeStyle,
+          headline: adHeadline || brandScanResult?.headings?.[0] || brandProfile.tagline,
+          subheadline: brandProfile.tagline,
+          ctaText: adCtaText || 'Compare Now',
           brandProfile: {
             name: brandProfile.name,
             archetype: brandProfile.archetype,
+            tagline: brandProfile.tagline,
+            websiteUrl: brandProfile.websiteUrl || adDestinationUrl,
+            brandColors: brandProfile.brandColors || brandScanResult?.palette,
+            brandFonts: brandProfile.brandFonts || brandScanResult?.fonts,
           },
           customerAvatar: {
             name: selectedAvatar.name,
@@ -1884,28 +1947,38 @@ export default function ContentStudio({
       const newImageUrl = data.imageUrl;
 
       if (newImageUrl) {
-        // Create new visual asset record
+        const styleLabel =
+          activeStyle === 'old_vs_new'
+            ? 'Old Way vs New Way Ad'
+            : activeStyle === 'proof_spotlight'
+            ? 'Benefit Spotlight Ad'
+            : activeStyle === 'social_story'
+            ? '9:16 Vertical Story Ad'
+            : 'Editorial Hook Ad';
+
         const newAsset: GeneratedVisualAsset = {
           id: `asset-${Date.now()}`,
-          prompt: imagePrompt,
-          aspectRatio: imageAspectRatio,
+          prompt: `${brandProfile.name} · ${styleLabel}`,
+          aspectRatio: activeStyle === 'social_story' ? '9:16' : imageAspectRatio,
           imageUrl: newImageUrl,
-          createdAt: 'Just now',
+          createdAt: styleLabel,
           targetAvatarName: selectedAvatar.name,
         };
-        setRecentAssets([newAsset, ...recentAssets]);
+        setRecentAssets((prev) => [newAsset, ...prev]);
 
         // Immediately apply to current variant
         applyImageToVariants(newImageUrl);
 
         showNotificationToast(
-          'Visual Asset Generated',
-          `Created custom image using ${data.source || 'AI engine'} calibrated for ${selectedAvatar.name}.`
+          'On-Brand Ad Creative Ready',
+          data.aiPhotoHint
+            ? `Generated "${styleLabel}" in ${brandProfile.name}'s exact palette (${data.width || 1080}×${data.height || 1080}). Tip: ${data.aiPhotoHint}`
+            : `Generated custom visual via ${data.source || 'AI studio'} for ${brandProfile.name}.`
         );
       }
     } catch (error) {
       console.error('Image generation error:', error);
-      showNotificationToast('Asset Studio', 'Applied calibrated brand visual asset to campaign variants.');
+      showNotificationToast('Asset Studio Error', 'Could not render custom ad creative right now.');
     } finally {
       setIsGeneratingImage(false);
     }
@@ -2526,7 +2599,10 @@ export default function ContentStudio({
                         </span>
                       </div>
 
-                      {/* Captured Desktop & Mobile Website Screenshots */}
+                      {/* Website Reference Captures (Used to Read Brand DNA) */}
+                      <div className="text-[10px] text-slate-400">
+                        Website Reference Scans <span className="text-slate-500">(used to read your brand — your ads use clean, low-text Ad Creatives on the right)</span>
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         {brandScanResult.desktopScreenshotUrl && (
                           <button
@@ -4378,12 +4454,12 @@ export default function ContentStudio({
 
                     {/* Media Visual in Mobile Frame */}
                     {currentActiveVariant.mediaUrl && (
-                      <div className="rounded-xl overflow-hidden border border-slate-800 aspect-video relative group">
+                      <div className="rounded-xl overflow-hidden border border-slate-800 bg-[#070B11] relative group">
                         <img
                           src={currentActiveVariant.mediaUrl}
                           alt="Mobile post creative"
                           referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
+                          className="w-full h-auto max-h-[380px] object-contain mx-auto"
                         />
                         <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 bg-black/75 rounded text-[9px] text-slate-300 font-mono">
                           {activeVariantTab === 'A' ? 'Variant A' : 'Variant B'}
@@ -4455,12 +4531,12 @@ export default function ContentStudio({
                     </div>
 
                     {currentActiveVariant.mediaUrl && (
-                      <div className="rounded-lg overflow-hidden border border-slate-800 aspect-video relative group">
+                      <div className="rounded-lg overflow-hidden border border-slate-800 bg-[#070B11] relative group">
                         <img
                           src={currentActiveVariant.mediaUrl}
                           alt="Campaign visual"
                           referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
+                          className="w-full h-auto max-h-[520px] object-contain mx-auto"
                         />
                         <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/70 backdrop-blur-sm rounded text-[10px] text-slate-300 font-mono">
                           Asset Active ({activeVariantTab === 'A' ? 'Variant A' : 'Variant B'})
@@ -4901,28 +4977,62 @@ export default function ContentStudio({
 {/* INTEGRATED CUSTOM AI IMAGE GENERATOR PANEL */}
           {showImageStudio && (
             <div className="bg-slate-950 rounded-2xl border border-red-500/40 p-4 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
                 <div className="flex items-center gap-2">
                   <Wand2 className="w-4 h-4 text-red-500" />
                   <span className="text-xs font-bold uppercase tracking-wider text-white">
-                    Custom Visual Asset Generator (Gemini 3.1 Flash Lite Image)
+                    Ad Creative &amp; Visual Studio (Brand-Styled · Low Text Density)
                   </span>
                 </div>
                 <span className="text-[11px] text-slate-400 font-mono">
-                  Calibrated for: <strong className="text-red-400">{selectedAvatar.name.split(' ')[0]}</strong>
+                  Brand: <strong className="text-emerald-400">{brandProfile.name}</strong>
                 </span>
+              </div>
+
+              {/* Ad Creative Format Picker */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] text-slate-400 font-semibold block">
+                  Proven Ad Creative Format (Algorithm-Safe · Styled in Your Exact Brand Colors)
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(
+                    [
+                      { id: 'old_vs_new', label: 'Old Way vs New Way', sub: 'High-converting contrast' },
+                      { id: 'editorial_hook', label: 'Bold Hook Card', sub: 'Clean thumb-stopper' },
+                      { id: 'proof_spotlight', label: 'Benefit Spotlight', sub: 'Value + proof badge' },
+                      { id: 'social_story', label: '9:16 Story / Reel', sub: 'Safe-zone vertical' },
+                    ] as const
+                  ).map((fmt) => (
+                    <button
+                      key={fmt.id}
+                      type="button"
+                      onClick={() => {
+                        setCreativeStyle(fmt.id);
+                        if (fmt.id === 'social_story') setImageAspectRatio('9:16');
+                      }}
+                      className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                        creativeStyle === fmt.id
+                          ? 'bg-emerald-950/50 border-emerald-500 text-white'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="text-[11px] font-bold leading-tight">{fmt.label}</div>
+                      <div className="text-[9px] text-slate-400 mt-0.5">{fmt.sub}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Prompt Input */}
               <div className="space-y-1.5">
                 <label className="text-[11px] text-slate-400 font-semibold block">
-                  Visual Asset Generation Prompt
+                  Ad Headline / Creative Direction (Connect Gemini or OpenAI key in AI &amp; Connectors for bespoke AI photography)
                 </label>
                 <textarea
                   rows={2}
                   value={imagePrompt}
                   onChange={(e) => setImagePrompt(e.target.value)}
-                  placeholder="Describe the visual asset to generate with the model..."
+                  placeholder="Describe the ad headline or visual direction..."
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-red-500"
                 />
               </div>
@@ -4953,8 +5063,8 @@ export default function ContentStudio({
                 <button
                   type="button"
                   disabled={isGeneratingImage || userRole === 'analyst'}
-                  onClick={handleGenerateCustomImage}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition-all ${
+                  onClick={() => handleGenerateCustomImage()}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
                     isGeneratingImage
                       ? 'bg-slate-800 text-slate-400 cursor-wait'
                       : 'bg-red-600 hover:bg-red-500 text-white active:scale-95 shadow-red-900/20'
@@ -4963,12 +5073,12 @@ export default function ContentStudio({
                   {isGeneratingImage ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Generating Visual Asset...</span>
+                      <span>Rendering Ad Creative...</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>Generate Custom Asset</span>
+                      <span>Generate Custom Ad Creative</span>
                     </>
                   )}
                 </button>
